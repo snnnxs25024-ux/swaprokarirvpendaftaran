@@ -1,5 +1,5 @@
 import React from 'react';
-import { Users, Phone, Award, MapPin, Building2, Briefcase, Handshake } from 'lucide-react';
+import { Users, Phone, MapPin, Building2, Briefcase, Handshake } from 'lucide-react';
 
 interface LandingPageProps {
   onApply: () => void;
