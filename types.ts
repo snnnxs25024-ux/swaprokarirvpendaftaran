@@ -157,3 +157,17 @@ export interface ApplicantDB {
   ktp_path: string;
   status: string; // 'new' | 'process' | 'interview' | 'rejected' | 'hired'
 }
+
+// Interface untuk Master Data
+export interface JobPosition {
+  id: number;
+  name: string;
+  value: string;
+}
+
+export interface JobPlacement {
+  id: number;
+  label: string;
+  value: string;
+  recruiter_phone: string;
+}

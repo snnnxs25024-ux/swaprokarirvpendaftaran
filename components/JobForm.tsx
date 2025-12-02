@@ -1,6 +1,6 @@
 
-import React, { useState, ChangeEvent, FormEvent } from 'react';
-import { FormData, INITIAL_DATA } from '../types';
+import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
+import { FormData, INITIAL_DATA, JobPosition, JobPlacement } from '../types';
 import { Section } from './Section';
 import { InputField, SelectField, TextAreaField, CheckboxField, FileUpload } from './InputGroup';
 import { PrivacyPolicy } from './PrivacyPolicy';
@@ -24,46 +24,42 @@ interface JobFormProps {
   onBack: () => void;
 }
 
-// Data Opsi Posisi
-const POSISI_OPTIONS = [
-  { label: 'SALES OFFICER / CMO', value: 'SALES OFFICER / CMO' },
-  { label: 'REMEDIAL KOLEKTOR', value: 'REMEDIAL KOLEKTOR' },
-  { label: 'RELATION OFFICER', value: 'RELATION OFFICER' },
-];
-
-// Data Opsi Penempatan
-const PENEMPATAN_OPTIONS = [
-  // ADIRA
-  { label: 'ADIRA FINANCE - JAKARTA RAYA', value: 'ADIRA JAKARTA RAYA' },
-  { label: 'ADIRA FINANCE - BEKASI RAYA', value: 'ADIRA BEKASI RAYA' },
-  { label: 'ADIRA FINANCE - DEPOK RAYA', value: 'ADIRA DEPOK RAYA' },
-  { label: 'ADIRA FINANCE - BOGOR RAYA', value: 'ADIRA BOGOR RAYA' },
-  // MACF
-  { label: 'MACF FINANCE - JAKARTA RAYA', value: 'MACF JAKARTA RAYA' },
-  { label: 'MACF FINANCE - BEKASI RAYA', value: 'MACF BEKASI RAYA' },
-  { label: 'MACF FINANCE - DEPOK RAYA', value: 'MACF DEPOK RAYA' },
-  { label: 'MACF FINANCE - BOGOR RAYA', value: 'MACF BOGOR RAYA' },
-  // SMSF
-  { label: 'SMS FINANCE - JAKARTA RAYA', value: 'SMSF JAKARTA RAYA' },
-  { label: 'SMS FINANCE - BEKASI RAYA', value: 'SMSF BEKASI RAYA' },
-  { label: 'SMS FINANCE - DEPOK RAYA', value: 'SMSF DEPOK RAYA' },
-  { label: 'SMS FINANCE - BOGOR RAYA', value: 'SMSF BOGOR RAYA' },
-  // BFI
-  { label: 'BFI FINANCE - JAKARTA RAYA', value: 'BFI JAKARTA RAYA' },
-  { label: 'BFI FINANCE - BEKASI RAYA', value: 'BFI BEKASI RAYA' },
-  { label: 'BFI FINANCE - DEPOK RAYA', value: 'BFI DEPOK RAYA' },
-  { label: 'BFI FINANCE - BOGOR RAYA', value: 'BFI BOGOR RAYA' },
-];
-
 export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [formData, setFormData] = useState<FormData>(INITIAL_DATA);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // State baru untuk validasi dan policy
+  // Validasi & Policy
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+
+  // Dynamic Data Options
+  const [positionOptions, setPositionOptions] = useState<{label: string, value: string}[]>([]);
+  const [placementOptions, setPlacementOptions] = useState<{label: string, value: string}[]>([]);
+  
+  // Store raw placement data to lookup recruiter phone later
+  const [rawPlacements, setRawPlacements] = useState<JobPlacement[]>([]);
+
+  // Fetch Master Data on Mount
+  useEffect(() => {
+    const fetchMasterData = async () => {
+      // 1. Fetch Posisi
+      const { data: posData } = await supabase.from('job_positions').select('*').order('name');
+      if (posData) {
+        setPositionOptions(posData.map((p: JobPosition) => ({ label: p.name, value: p.value })));
+      }
+
+      // 2. Fetch Penempatan
+      const { data: placeData } = await supabase.from('job_placements').select('*').order('label');
+      if (placeData) {
+        setRawPlacements(placeData);
+        setPlacementOptions(placeData.map((p: JobPlacement) => ({ label: p.label, value: p.value })));
+      }
+    };
+
+    fetchMasterData();
+  }, []);
 
   // Logic to determine if IPK should be shown (Higher Education)
   const showIPK = ['D3', 'S1', 'S2'].includes(formData.tingkatPendidikan);
@@ -74,7 +70,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
     // 1. Strict NIK Limitation (Max 16 Digits)
     if (name === 'nik' && value.length > 16) {
-      return; // Stop updating if length exceeds 16
+      return; 
     }
 
     setFormData(prev => {
@@ -149,7 +145,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     if (!formData.noHp) {
       errors.noHp = "Nomor HP wajib diisi.";
     } else {
-      // Regex untuk memastikan hanya angka (dan opsional tanda + di depan)
       const phoneRegex = /^[0-9]+$/;
       if (!phoneRegex.test(formData.noHp)) {
          errors.noHp = "Nomor HP hanya boleh berisi angka.";
@@ -209,14 +204,13 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
     // Jalankan Validasi
     if (!validateForm()) {
-      return; // Stop jika tidak valid
+      return; 
     }
 
     setIsSubmitting(true);
     
     try {
       // 0. CEK DUPLIKASI NIK
-      // Menggunakan maybeSingle() karena jika data kosong (belum terdaftar) tidak dianggap error
       const { data: existingUser, error: checkError } = await supabase
         .from('applicants')
         .select('id')
@@ -226,7 +220,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       if (checkError) throw checkError;
 
       if (existingUser) {
-        // Jika NIK ditemukan, lempar error kustom
         throw new Error("Maaf, NIK Anda sudah terdaftar sebelumnya. Anda tidak dapat mengirim lamaran lebih dari satu kali.");
       }
 
@@ -301,7 +294,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
     } catch (err: any) {
       console.error("Submission Error:", err);
-      // Tampilkan pesan error (termasuk duplikasi NIK)
       setErrorMessage(err.message || "Terjadi kesalahan sistem. Mohon coba lagi.");
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
@@ -310,24 +302,13 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   };
 
   if (submitted) {
-    // Tentukan Nomor WhatsApp Rekruter Berdasarkan Wilayah
-    let recruiterNumber = "6285718648488"; // Default Jakarta Raya
-    const placementUpper = formData.penempatan.toUpperCase();
-    let regionName = "Jakarta Raya";
-    
-    if (placementUpper.includes("BEKASI")) {
-       recruiterNumber = "628567651009";
-       regionName = "Bekasi Raya";
-    } else if (placementUpper.includes("BOGOR")) {
-       recruiterNumber = "6289618770666";
-       regionName = "Bogor Raya";
-    } else if (placementUpper.includes("DEPOK")) {
-       recruiterNumber = "6289618770666";
-       regionName = "Depok Raya";
-    }
+    // Determine WhatsApp Number Dynamically from Master Data
+    const selectedPlacement = rawPlacements.find(p => p.value === formData.penempatan);
+    const recruiterNumber = selectedPlacement ? selectedPlacement.recruiter_phone : "628123456789"; // Fallback
+    const regionName = selectedPlacement ? selectedPlacement.label : formData.penempatan;
 
-    // Buat Pesan Otomatis
-    const waMessage = `Halo Rekruter ${regionName}, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${formData.penempatan}. Mohon arahan selanjutnya.`;
+    // Build Pre-filled Message
+    const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${regionName}. Mohon arahan selanjutnya.`;
     const waLink = `https://wa.me/${recruiterNumber}?text=${encodeURIComponent(waMessage)}`;
 
     return (
@@ -391,10 +372,9 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         onClose={() => setIsPrivacyModalOpen(false)} 
       />
 
-      {/* Header Image Area with Back Button */}
       <div className="h-64 bg-slate-900 relative overflow-hidden">
          <img 
-           src="https://images.unsplash.com/photo-1497215728101-856f4ea42174?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" 
+           src="https://i.imgur.com/M3N0POE.jpeg" 
            alt="Office Background" 
            className="w-full h-full object-cover opacity-30"
          />
@@ -449,7 +429,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 value={formData.posisiDilamar} 
                 onChange={handleChange} 
                 required
-                options={POSISI_OPTIONS}
+                options={positionOptions}
               />
               <SelectField 
                 label="Penempatan & Klien" 
@@ -457,7 +437,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 value={formData.penempatan} 
                 onChange={handleChange} 
                 required 
-                options={PENEMPATAN_OPTIONS}
+                options={placementOptions}
               />
             </div>
           </Section>
@@ -471,7 +451,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InputField label="Nama Lengkap" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} required />
               
-              {/* NIK VALIDATION */}
               <InputField 
                 label="NIK (Nomor Induk Kependudukan)" 
                 name="nik" 
@@ -531,7 +510,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 ]}
               />
               
-              {/* No HP VALIDATION */}
               <InputField 
                 label="Nomor HP / WhatsApp" 
                 name="noHp" 
@@ -612,7 +590,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
               
               <InputField label="Jurusan" name="jurusan" value={formData.jurusan} onChange={handleChange} required />
               
-              {/* IPK FIELD - DYNAMIC DISPLAY */}
               {showIPK && (
                 <InputField 
                   label="IPK / Nilai Rata-rata" 
@@ -635,7 +612,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
             icon={<Briefcase size={20} />}
             description="Silakan pilih status pengalaman kerja Anda saat ini."
           >
-             {/* Pilihan Status: Fresh Graduate vs Berpengalaman */}
              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                 <button
                   type="button"
@@ -692,11 +668,9 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 </button>
              </div>
 
-             {/* Detail Form for Experienced Users */}
              {formData.hasPengalamanKerja ? (
                <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 space-y-6 animate-fadeIn">
                  
-                 {/* Pertanyaan Spesifik Leasing (Nested) */}
                  <div className="bg-white p-4 rounded-lg border border-brand-100 shadow-sm">
                    <label className="block text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
                      <Building2 size={16} className="text-brand-600"/>
@@ -810,7 +784,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
             </div>
           </Section>
 
-          {/* Section 7: Persetujuan & Submit */}
+          {/* Section 7: Persetujuan */}
           <div className="bg-white p-6 rounded-xl shadow-sm border border-brand-100 mb-8">
              <div className="flex items-start gap-4">
                 <div className="shrink-0 text-brand-600 mt-1">

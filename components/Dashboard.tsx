@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { ApplicantDB } from '../types';
+import { ApplicantDB, JobPlacement, JobPosition } from '../types';
 import { 
   LogOut, 
   Search, 
@@ -25,14 +25,19 @@ import {
   Save,
   Plus,
   Copy,
-  ClipboardCheck
+  ClipboardCheck,
+  CheckSquare,
+  Square,
+  ArrowUpDown,
+  ListFilter,
+  Settings
 } from 'lucide-react';
 
 interface DashboardProps {
   onLogout: () => void;
 }
 
-type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired';
+type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 'master_data';
 
 // PIC Options
 const PIC_OPTIONS = ['SUNAN', 'RENDY', 'DENDY', 'REHAN'];
@@ -41,7 +46,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  
+  // Filter & Search States
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+  const [filterEducation, setFilterEducation] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  // Bulk Action States
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   
   // Selection & Editing
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantDB | null>(null);
@@ -58,9 +71,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     posisi: ''
   });
 
+  // MASTER DATA STATES
+  const [positions, setPositions] = useState<JobPosition[]>([]);
+  const [placements, setPlacements] = useState<JobPlacement[]>([]);
+  const [masterTab, setMasterTab] = useState<'positions' | 'placements'>('positions');
+  const [newPosition, setNewPosition] = useState('');
+  const [newPlacement, setNewPlacement] = useState({ label: '', recruiter_phone: '' });
+
   useEffect(() => {
     fetchApplicants();
+    // Also fetch master data just in case
+    fetchMasterData();
   }, []);
+
+  // Reset selection when tab changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab, filterClient, filterEducation, searchTerm]);
 
   const fetchApplicants = async () => {
     setLoading(true);
@@ -77,6 +104,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchMasterData = async () => {
+      const { data: pos } = await supabase.from('job_positions').select('*').order('name');
+      if (pos) setPositions(pos);
+
+      const { data: place } = await supabase.from('job_placements').select('*').order('label');
+      if (place) setPlacements(place);
   };
 
   const updateStatus = async (id: number, newStatus: string) => {
@@ -105,6 +140,73 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       setUpdatingId(null);
     }
   };
+
+  // --- BULK ACTIONS ---
+  
+  const toggleSelectAll = (displayedIds: number[]) => {
+    if (selectedIds.length === displayedIds.length && displayedIds.length > 0) {
+      setSelectedIds([]); // Deselect All
+    } else {
+      setSelectedIds(displayedIds); // Select All Visible
+    }
+  };
+
+  const toggleSelection = (id: number) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkStatusUpdate = async (newStatus: string) => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Ubah status ${selectedIds.length} kandidat menjadi "${newStatus}"?`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .update({ status: newStatus })
+        .in('id', selectedIds);
+
+      if (error) throw error;
+
+      setApplicants(prev => prev.map(app => 
+        selectedIds.includes(app.id) ? { ...app, status: newStatus } : app
+      ));
+      setSelectedIds([]);
+      alert("Status berhasil diperbarui massal.");
+    } catch (err) {
+      console.error("Bulk update error:", err);
+      alert("Gagal melakukan update massal.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`YAKIN MENGHAPUS ${selectedIds.length} DATA PERMANEN? Data tidak bisa dikembalikan.`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .delete()
+        .in('id', selectedIds);
+
+      if (error) throw error;
+
+      setApplicants(prev => prev.filter(app => !selectedIds.includes(app.id)));
+      setSelectedIds([]);
+      alert("Data berhasil dihapus.");
+    } catch (err) {
+      console.error("Bulk delete error:", err);
+      alert("Gagal menghapus data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   // --- CRUD OPERATIONS ---
 
@@ -225,22 +327,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
 
-  // --- FILTERS ---
+  // --- FILTERS & SORTING LOGIC ---
   const getFilteredApplicants = () => {
     let filtered = applicants;
 
-    // Filter by Tab
+    // 1. Filter by Tab
     if (activeTab === 'talent_pool') {
-      filtered = applicants.filter(a => a.status === 'new' || !a.status);
+      filtered = filtered.filter(a => a.status === 'new' || !a.status);
     } else if (activeTab === 'process') {
-      filtered = applicants.filter(a => ['process', 'interview'].includes(a.status));
+      filtered = filtered.filter(a => ['process', 'interview'].includes(a.status));
     } else if (activeTab === 'rejected') {
-      filtered = applicants.filter(a => a.status === 'rejected');
+      filtered = filtered.filter(a => a.status === 'rejected');
     } else if (activeTab === 'hired') {
-      filtered = applicants.filter(a => a.status === 'hired');
+      filtered = filtered.filter(a => a.status === 'hired');
     }
 
-    // Filter by Search
+    // 2. Filter by Client (Penempatan)
+    if (filterClient) {
+      filtered = filtered.filter(a => a.penempatan.includes(filterClient));
+    }
+
+    // 3. Filter by Education
+    if (filterEducation) {
+       filtered = filtered.filter(a => a.tingkat_pendidikan === filterEducation);
+    }
+
+    // 4. Filter by Search
     if (searchTerm) {
       const lowerTerm = searchTerm.toLowerCase();
       filtered = filtered.filter(app => 
@@ -250,8 +362,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       );
     }
 
+    // 5. Sorting
+    filtered.sort((a, b) => {
+       const dateA = new Date(a.created_at).getTime();
+       const dateB = new Date(b.created_at).getTime();
+       return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+    });
+
     return filtered;
   };
+
+  const displayedApplicants = getFilteredApplicants();
 
   // --- HELPERS ---
   const getFileUrl = (path: string) => {
@@ -268,6 +389,38 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const text = `Halo Sdr/i ${name}, kami dari HRD PT Swapro International ingin menginfokan terkait lamaran kerja Anda.`;
     return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
   };
+
+  // --- MASTER DATA CRUD HANDLERS ---
+  const handleAddPosition = async () => {
+    if(!newPosition.trim()) return;
+    const { error } = await supabase.from('job_positions').insert({ name: newPosition, value: newPosition });
+    if (error) alert("Gagal menambah posisi");
+    else { setNewPosition(''); fetchMasterData(); }
+  };
+
+  const handleDeletePosition = async (id: number) => {
+    if(!window.confirm("Hapus posisi ini?")) return;
+    const { error } = await supabase.from('job_positions').delete().eq('id', id);
+    if(error) alert("Gagal menghapus"); else fetchMasterData();
+  };
+
+  const handleAddPlacement = async () => {
+     if(!newPlacement.label.trim() || !newPlacement.recruiter_phone.trim()) return;
+     const { error } = await supabase.from('job_placements').insert({
+        label: newPlacement.label,
+        value: newPlacement.label.replace(' - ', ' '), // Simplistic value gen
+        recruiter_phone: newPlacement.recruiter_phone
+     });
+     if (error) alert("Gagal menambah penempatan");
+     else { setNewPlacement({label: '', recruiter_phone: ''}); fetchMasterData(); }
+  };
+
+  const handleDeletePlacement = async (id: number) => {
+     if(!window.confirm("Hapus penempatan ini?")) return;
+     const { error } = await supabase.from('job_placements').delete().eq('id', id);
+     if(error) alert("Gagal menghapus"); else fetchMasterData();
+  };
+
 
   // --- STATS CALCULATION ---
   const stats = {
@@ -294,8 +447,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* --- SIDEBAR --- */}
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col fixed h-full z-20">
         <div className="h-16 flex items-center gap-3 px-6 border-b border-slate-800">
-          <div className="w-8 h-8 bg-brand-600 rounded flex items-center justify-center text-white font-bold">A</div>
-          <span className="font-bold text-white tracking-wide">HR PORTAL</span>
+        <img 
+  src="https://i.imgur.com/Lf2IC1Z.png" 
+  alt="Logo Admin" 
+  className="w-8 h-8 object-contain" 
+/>
+          <span className="font-bold text-white tracking-wide">SWA PORTAL</span>
         </div>
 
         <nav className="flex-1 py-6 px-3 space-y-1">
@@ -339,6 +496,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <div className="flex items-center gap-3"><XCircle size={18} /> Ditolak</div>
             {stats.rejected > 0 && <span className="bg-slate-700 text-slate-300 text-xs px-2 py-0.5 rounded-full">{stats.rejected}</span>}
           </button>
+          
+           <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">System</div>
+            <button 
+            onClick={() => setActiveTab('master_data')}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${activeTab === 'master_data' ? 'bg-slate-700 text-white' : 'hover:bg-slate-800 hover:text-white'}`}
+          >
+            <Settings size={18} /> Pengaturan
+          </button>
+
         </nav>
 
         <div className="p-4 border-t border-slate-800">
@@ -355,224 +521,418 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       <main className="flex-1 ml-64 p-8">
         
         {/* HEADER */}
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-6">
            <div>
               <h1 className="text-2xl font-bold text-slate-900 capitalize">
-                {activeTab === 'dashboard' ? 'Overview' : activeTab.replace('_', ' ')}
+                {activeTab === 'dashboard' ? 'Overview' : activeTab === 'master_data' ? 'Master Data & Pengaturan' : activeTab.replace('_', ' ')}
               </h1>
               <p className="text-slate-500 text-sm">
-                {activeTab === 'dashboard' ? 'Ringkasan aktivitas rekrutmen.' : 'Kelola data kandidat di tahap ini.'}
+                {activeTab === 'dashboard' ? 'Ringkasan aktivitas rekrutmen.' : activeTab === 'master_data' ? 'Kelola daftar posisi dan penempatan lowongan.' : 'Kelola data kandidat di tahap ini.'}
               </p>
            </div>
            
-           <div className="flex items-center gap-4">
-               {/* Add Manual Candidate Button (Placeholder) */}
-               {activeTab !== 'dashboard' && (
-                 <button 
-                    onClick={() => alert("Fitur Tambah Kandidat Manual akan membuka form kosong (Segera Hadir).")} 
-                    className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow-sm"
-                 >
-                    <Plus size={18} /> Tambah Kandidat
-                 </button>
-               )}
-
-               {activeTab !== 'dashboard' && (
-                 <div className="relative w-72">
-                    <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                    <input 
-                      type="text" 
-                      placeholder="Cari kandidat..." 
-                      className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                    />
-                 </div>
-               )}
-           </div>
+           {activeTab !== 'dashboard' && activeTab !== 'master_data' && (
+             <button 
+                onClick={() => alert("Fitur Tambah Kandidat Manual akan membuka form kosong (Segera Hadir).")} 
+                className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow-sm text-sm"
+             >
+                <Plus size={16} /> Tambah Kandidat
+             </button>
+           )}
         </div>
 
-        {/* DASHBOARD VIEW */}
-        {activeTab === 'dashboard' ? (
-          <div className="space-y-6 animate-fadeIn">
-            {/* Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                     <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Inbox size={24}/></div>
-                     <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded">+12%</span>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{stats.total}</div>
-                  <div className="text-sm text-slate-500">Total Pelamar Masuk</div>
-               </div>
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                     <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg"><RefreshCcw size={24}/></div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{stats.process}</div>
-                  <div className="text-sm text-slate-500">Sedang Diproses</div>
-               </div>
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                     <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckCircle size={24}/></div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{stats.hired}</div>
-                  <div className="text-sm text-slate-500">Kandidat Diterima</div>
-               </div>
-               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                  <div className="flex justify-between items-start mb-4">
-                     <div className="p-2 bg-red-50 text-red-600 rounded-lg"><XCircle size={24}/></div>
-                  </div>
-                  <div className="text-3xl font-bold text-slate-900">{stats.rejected}</div>
-                  <div className="text-sm text-slate-500">Tidak Lolos</div>
-               </div>
-            </div>
-
-            {/* Simple Charts */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 className="font-bold text-slate-800 mb-6">Pelamar per Wilayah (Top 5)</h3>
-                    <div className="space-y-4">
-                        {sortedLocations.map(([loc, count], idx) => (
-                           <div key={idx}>
-                              <div className="flex justify-between text-sm mb-1">
-                                 <span className="font-medium text-slate-700">{loc}</span>
-                                 <span className="text-slate-500">{count} Orang</span>
-                              </div>
-                              <div className="w-full bg-slate-100 rounded-full h-2.5">
-                                 <div 
-                                    className="bg-brand-600 h-2.5 rounded-full transition-all duration-500" 
-                                    style={{ width: `${(count / stats.total) * 100}%` }}
-                                 ></div>
-                              </div>
-                           </div>
-                        ))}
-                        {sortedLocations.length === 0 && <p className="text-gray-400 text-sm">Belum ada data cukup.</p>}
+        {/* MASTER DATA VIEW */}
+        {activeTab === 'master_data' ? (
+           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
+              <div className="border-b border-gray-200 flex">
+                 <button 
+                   onClick={() => setMasterTab('positions')}
+                   className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${masterTab === 'positions' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                 >
+                    Daftar Posisi Pekerjaan
+                 </button>
+                 <button 
+                   onClick={() => setMasterTab('placements')}
+                   className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${masterTab === 'placements' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-800'}`}
+                 >
+                    Daftar Penempatan & WA Rekruter
+                 </button>
+              </div>
+              
+              <div className="p-6">
+                 {masterTab === 'positions' && (
+                    <div className="max-w-3xl">
+                       <div className="flex gap-4 mb-6">
+                          <input 
+                            className="flex-1 border p-2 rounded-lg" 
+                            placeholder="Nama Posisi Baru (Misal: Admin Staff)"
+                            value={newPosition}
+                            onChange={(e) => setNewPosition(e.target.value)}
+                          />
+                          <button onClick={handleAddPosition} className="bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700">Tambah</button>
+                       </div>
+                       
+                       <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm text-left">
+                             <thead className="bg-gray-50 text-gray-500 font-medium">
+                                <tr>
+                                   <th className="px-4 py-3">Nama Posisi</th>
+                                   <th className="px-4 py-3 text-right">Aksi</th>
+                                </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                                {positions.map(pos => (
+                                   <tr key={pos.id} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 text-gray-800">{pos.name}</td>
+                                      <td className="px-4 py-3 text-right">
+                                         <button onClick={() => handleDeletePosition(pos.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button>
+                                      </td>
+                                   </tr>
+                                ))}
+                             </tbody>
+                          </table>
+                       </div>
                     </div>
-                </div>
+                 )}
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h3 className="font-bold text-slate-800 mb-4">Aktivitas Terbaru</h3>
-                    <div className="space-y-4">
-                       {applicants.slice(0, 5).map(app => (
-                          <div key={app.id} className="flex items-center gap-4 p-3 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
-                             <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-600">
-                                {app.nama_lengkap.charAt(0)}
-                             </div>
-                             <div className="flex-1">
-                                <div className="font-semibold text-slate-800 text-sm">{app.nama_lengkap}</div>
-                                <div className="text-xs text-slate-500">Melamar sebagai {app.posisi_dilamar}</div>
-                             </div>
-                             <div className="text-xs text-slate-400">
-                                {new Date(app.created_at).toLocaleDateString()}
-                             </div>
+                 {masterTab === 'placements' && (
+                    <div className="max-w-4xl">
+                       <div className="flex gap-4 mb-6 items-end">
+                          <div className="flex-1">
+                             <label className="text-xs font-bold text-gray-500 mb-1 block">Label Penempatan (Klien - Kota)</label>
+                             <input 
+                                className="w-full border p-2 rounded-lg" 
+                                placeholder="Contoh: BCA - JAKARTA PUSAT"
+                                value={newPlacement.label}
+                                onChange={(e) => setNewPlacement({...newPlacement, label: e.target.value})}
+                             />
                           </div>
-                       ))}
+                          <div className="w-1/3">
+                             <label className="text-xs font-bold text-gray-500 mb-1 block">No WA Rekruter (628...)</label>
+                             <input 
+                                className="w-full border p-2 rounded-lg" 
+                                placeholder="62812345678"
+                                value={newPlacement.recruiter_phone}
+                                onChange={(e) => setNewPlacement({...newPlacement, recruiter_phone: e.target.value})}
+                             />
+                          </div>
+                          <button onClick={handleAddPlacement} className="bg-brand-600 text-white px-6 py-2.5 rounded-lg hover:bg-brand-700 font-medium">Tambah</button>
+                       </div>
+                       
+                       <div className="border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm text-left">
+                             <thead className="bg-gray-50 text-gray-500 font-medium">
+                                <tr>
+                                   <th className="px-4 py-3">Label Penempatan</th>
+                                   <th className="px-4 py-3">No WA Rekruter</th>
+                                   <th className="px-4 py-3 text-right">Aksi</th>
+                                </tr>
+                             </thead>
+                             <tbody className="divide-y divide-gray-100">
+                                {placements.map(pl => (
+                                   <tr key={pl.id} className="hover:bg-gray-50">
+                                      <td className="px-4 py-3 text-gray-800 font-medium">{pl.label}</td>
+                                      <td className="px-4 py-3 text-gray-600">{pl.recruiter_phone}</td>
+                                      <td className="px-4 py-3 text-right">
+                                         <button onClick={() => handleDeletePlacement(pl.id)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button>
+                                      </td>
+                                   </tr>
+                                ))}
+                             </tbody>
+                          </table>
+                       </div>
                     </div>
-                    <button onClick={() => setActiveTab('talent_pool')} className="w-full mt-4 text-brand-600 text-sm font-medium hover:underline">Lihat Semua</button>
-                </div>
-            </div>
-          </div>
+                 )}
+              </div>
+           </div>
         ) : (
-          /* TABLE VIEW FOR OTHER TABS */
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
-              {loading ? (
-                <div className="p-12 text-center text-gray-500">Memuat data...</div>
-              ) : getFilteredApplicants().length === 0 ? (
-                <div className="p-20 text-center flex flex-col items-center">
-                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-400">
-                        <Filter size={32} />
+          /* REGULAR CONTENT (Filters, Table, Stats) */
+          <>
+            {/* ADVANCED TOOLBAR (Filters & Bulk Actions) */}
+            {activeTab !== 'dashboard' && (
+              <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-6 flex flex-col md:flex-row justify-between gap-4">
+                  {/* Left: Filters */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder="Cari kandidat..." 
+                          className="pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-transparent w-48"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
-                    <h3 className="text-lg font-medium text-slate-900">Tidak ada data</h3>
-                    <p className="text-slate-500 mt-1">Belum ada kandidat di kategori ini.</p>
+                    
+                    <div className="relative">
+                      <select 
+                          className="appearance-none pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500"
+                          value={filterClient}
+                          onChange={(e) => setFilterClient(e.target.value)}
+                      >
+                        <option value="">Semua Klien</option>
+                        <option value="ADIRA">ADIRA</option>
+                        <option value="BFI">BFI</option>
+                        <option value="SMS">SMS FINANCE</option>
+                        <option value="MACF">MACF</option>
+                      </select>
+                      <ListFilter className="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none" size={14} />
+                    </div>
+
+                    <div className="relative">
+                      <select 
+                          className="appearance-none pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500"
+                          value={filterEducation}
+                          onChange={(e) => setFilterEducation(e.target.value)}
+                      >
+                        <option value="">Semua Pendidikan</option>
+                        <option value="SMA/SMK">SMA/SMK</option>
+                        <option value="D3">D3</option>
+                        <option value="S1">S1</option>
+                      </select>
+                      <ListFilter className="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none" size={14} />
+                    </div>
+                    
+                    <div className="relative">
+                      <select 
+                          className="appearance-none pl-3 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-brand-500"
+                          value={sortOrder}
+                          onChange={(e) => setSortOrder(e.target.value as any)}
+                      >
+                        <option value="newest">Terbaru</option>
+                        <option value="oldest">Terlama</option>
+                      </select>
+                      <ArrowUpDown className="absolute right-2.5 top-2.5 text-gray-400 pointer-events-none" size={14} />
+                    </div>
+                  </div>
+
+                  {/* Right: Bulk Actions */}
+                  {selectedIds.length > 0 && (
+                    <div className="flex items-center gap-2 animate-fadeIn bg-brand-50 px-3 py-1.5 rounded-lg border border-brand-100">
+                        <span className="text-sm font-bold text-brand-700">{selectedIds.length} Dipilih</span>
+                        <div className="h-4 w-px bg-brand-200 mx-1"></div>
+                        <select 
+                          className="text-sm bg-white border border-brand-200 text-brand-700 rounded px-2 py-1 focus:outline-none"
+                          onChange={(e) => {
+                              if(e.target.value) handleBulkStatusUpdate(e.target.value);
+                              e.target.value = ""; // reset
+                          }}
+                        >
+                          <option value="">Ubah Status...</option>
+                          <option value="process">Proses</option>
+                          <option value="interview">Interview</option>
+                          <option value="hired">Diterima</option>
+                          <option value="rejected">Ditolak</option>
+                        </select>
+                        <button 
+                          onClick={handleBulkDelete}
+                          className="p-1.5 text-red-600 hover:bg-red-100 rounded transition"
+                          title="Hapus Terpilih"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                    </div>
+                  )}
+              </div>
+            )}
+
+            {/* DASHBOARD VIEW */}
+            {activeTab === 'dashboard' ? (
+              <div className="space-y-6 animate-fadeIn">
+                {/* Stat Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Inbox size={24}/></div>
+                        <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded">+12%</span>
+                      </div>
+                      <div className="text-3xl font-bold text-slate-900">{stats.total}</div>
+                      <div className="text-sm text-slate-500">Total Pelamar Masuk</div>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-2 bg-yellow-50 text-yellow-600 rounded-lg"><RefreshCcw size={24}/></div>
+                      </div>
+                      <div className="text-3xl font-bold text-slate-900">{stats.process}</div>
+                      <div className="text-sm text-slate-500">Sedang Diproses</div>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg"><CheckCircle size={24}/></div>
+                      </div>
+                      <div className="text-3xl font-bold text-slate-900">{stats.hired}</div>
+                      <div className="text-sm text-slate-500">Kandidat Diterima</div>
+                  </div>
+                  <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="p-2 bg-red-50 text-red-600 rounded-lg"><XCircle size={24}/></div>
+                      </div>
+                      <div className="text-3xl font-bold text-slate-900">{stats.rejected}</div>
+                      <div className="text-sm text-slate-500">Tidak Lolos</div>
+                  </div>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-gray-200">
-                        <th className="px-6 py-4 font-bold">Kandidat</th>
-                        <th className="px-6 py-4 font-bold">Posisi</th>
-                        <th className="px-6 py-4 font-bold">Domisili & Kontak</th>
-                        <th className="px-6 py-4 font-bold">Status</th>
-                        <th className="px-6 py-4 font-bold text-right">Aksi</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-sm text-gray-700 divide-y divide-gray-100">
-                      {getFilteredApplicants().map((applicant) => (
-                        <tr key={applicant.id} className="hover:bg-blue-50/30 transition-colors group">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-brand-50 text-brand-700 rounded-full flex items-center justify-center font-bold">
-                                    {applicant.nama_lengkap.charAt(0)}
+
+                {/* Simple Charts */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-slate-800 mb-6">Pelamar per Wilayah (Top 5)</h3>
+                        <div className="space-y-4">
+                            {sortedLocations.map(([loc, count], idx) => (
+                              <div key={idx}>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="font-medium text-slate-700">{loc}</span>
+                                    <span className="text-slate-500">{count} Orang</span>
+                                  </div>
+                                  <div className="w-full bg-slate-100 rounded-full h-2.5">
+                                    <div 
+                                        className="bg-brand-600 h-2.5 rounded-full transition-all duration-500" 
+                                        style={{ width: `${(count / stats.total) * 100}%` }}
+                                    ></div>
+                                  </div>
+                              </div>
+                            ))}
+                            {sortedLocations.length === 0 && <p className="text-gray-400 text-sm">Belum ada data cukup.</p>}
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-slate-800 mb-4">Aktivitas Terbaru</h3>
+                        <div className="space-y-4">
+                          {applicants.slice(0, 5).map(app => (
+                              <div key={app.id} className="flex items-center gap-4 p-3 hover:bg-slate-50 rounded-lg transition-colors border border-transparent hover:border-slate-100">
+                                <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-bold text-slate-600">
+                                    {app.nama_lengkap.charAt(0)}
                                 </div>
-                                <div>
-                                    <div className="font-bold text-slate-900">{applicant.nama_lengkap}</div>
-                                    <div className="text-xs text-slate-500">{new Date(applicant.created_at).toLocaleDateString()}</div>
+                                <div className="flex-1">
+                                    <div className="font-semibold text-slate-800 text-sm">{app.nama_lengkap}</div>
+                                    <div className="text-xs text-slate-500">Melamar sebagai {app.posisi_dilamar}</div>
                                 </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-slate-800">{applicant.posisi_dilamar}</div>
-                            <div className="text-xs text-slate-500 mt-0.5">{applicant.penempatan}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                             <div className="text-slate-800">{applicant.kota}</div>
-                             <div className="text-xs text-slate-500">{applicant.no_hp}</div>
-                          </td>
-                          <td className="px-6 py-4">
-                             <select 
-                                value={applicant.status || 'new'}
-                                onChange={(e) => updateStatus(applicant.id, e.target.value)}
-                                disabled={updatingId === applicant.id}
-                                className={`
-                                    text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-brand-500
-                                    ${applicant.status === 'new' ? 'bg-blue-100 text-blue-700' : 
-                                      ['process', 'interview'].includes(applicant.status) ? 'bg-yellow-100 text-yellow-800' :
-                                      applicant.status === 'hired' ? 'bg-emerald-100 text-emerald-800' : 
-                                      'bg-red-100 text-red-800'}
-                                `}
-                             >
-                                <option value="new">Baru</option>
-                                <option value="process">Diproses</option>
-                                <option value="interview">Interview</option>
-                                <option value="hired">Diterima</option>
-                                <option value="rejected">Ditolak</option>
-                             </select>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <a 
-                                href={generateWaLink(applicant.no_hp, applicant.nama_lengkap)}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title="Hubungi WhatsApp"
-                              >
-                                <MessageCircle size={18} />
-                              </a>
-                              <button 
-                                onClick={() => { setSelectedApplicant(applicant); setIsEditing(false); }}
-                                className="p-2 text-slate-600 hover:bg-slate-100 hover:text-brand-600 rounded-lg transition-colors"
-                                title="Lihat Detail"
-                              >
-                                <FileText size={18} />
-                              </button>
-                               <button 
-                                onClick={() => handleDelete(applicant.id)}
-                                className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
-                                title="Hapus Data"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                                <div className="text-xs text-slate-400">
+                                    {new Date(app.created_at).toLocaleDateString()}
+                                </div>
+                              </div>
+                          ))}
+                        </div>
+                        <button onClick={() => setActiveTab('talent_pool')} className="w-full mt-4 text-brand-600 text-sm font-medium hover:underline">Lihat Semua</button>
+                    </div>
                 </div>
-              )}
-          </div>
+              </div>
+            ) : (
+              /* TABLE VIEW FOR OTHER TABS */
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
+                  {loading ? (
+                    <div className="p-12 text-center text-gray-500">Memuat data...</div>
+                  ) : displayedApplicants.length === 0 ? (
+                    <div className="p-20 text-center flex flex-col items-center">
+                        <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4 text-slate-400">
+                            <Filter size={32} />
+                        </div>
+                        <h3 className="text-lg font-medium text-slate-900">Tidak ada data</h3>
+                        <p className="text-slate-500 mt-1">Coba ubah filter atau kata kunci pencarian.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider border-b border-gray-200">
+                            <th className="px-6 py-4 w-10">
+                                <button 
+                                    onClick={() => toggleSelectAll(displayedApplicants.map(a => a.id))}
+                                    className="text-slate-400 hover:text-brand-600"
+                                >
+                                    {selectedIds.length > 0 && selectedIds.length === displayedApplicants.length ? <CheckSquare size={18} className="text-brand-600" /> : <Square size={18} />}
+                                </button>
+                            </th>
+                            <th className="px-6 py-4 font-bold">Kandidat</th>
+                            <th className="px-6 py-4 font-bold">Posisi</th>
+                            <th className="px-6 py-4 font-bold">Domisili & Kontak</th>
+                            <th className="px-6 py-4 font-bold">Status</th>
+                            <th className="px-6 py-4 font-bold text-right">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-sm text-gray-700 divide-y divide-gray-100">
+                          {displayedApplicants.map((applicant) => (
+                            <tr key={applicant.id} className={`hover:bg-blue-50/30 transition-colors group ${selectedIds.includes(applicant.id) ? 'bg-blue-50/60' : ''}`}>
+                              <td className="px-6 py-4">
+                                <button onClick={() => toggleSelection(applicant.id)} className="text-slate-400 hover:text-brand-600">
+                                    {selectedIds.includes(applicant.id) ? <CheckSquare size={18} className="text-brand-600" /> : <Square size={18} />}
+                                </button>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-brand-50 text-brand-700 rounded-full flex items-center justify-center font-bold">
+                                        {applicant.nama_lengkap.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-slate-900">{applicant.nama_lengkap}</div>
+                                        <div className="text-xs text-slate-500">{new Date(applicant.created_at).toLocaleDateString()} • {applicant.tingkat_pendidikan}</div>
+                                    </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="font-medium text-slate-800">{applicant.posisi_dilamar}</div>
+                                <div className="text-xs text-slate-500 mt-0.5">{applicant.penempatan}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="text-slate-800">{applicant.kota}</div>
+                                <div className="text-xs text-slate-500">{applicant.no_hp}</div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <select 
+                                    value={applicant.status || 'new'}
+                                    onChange={(e) => updateStatus(applicant.id, e.target.value)}
+                                    disabled={updatingId === applicant.id}
+                                    className={`
+                                        text-xs font-semibold px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-brand-500
+                                        ${applicant.status === 'new' ? 'bg-blue-100 text-blue-700' : 
+                                          ['process', 'interview'].includes(applicant.status) ? 'bg-yellow-100 text-yellow-800' :
+                                          applicant.status === 'hired' ? 'bg-emerald-100 text-emerald-800' : 
+                                          'bg-red-100 text-red-800'}
+                                    `}
+                                >
+                                    <option value="new">Baru</option>
+                                    <option value="process">Diproses</option>
+                                    <option value="interview">Interview</option>
+                                    <option value="hired">Diterima</option>
+                                    <option value="rejected">Ditolak</option>
+                                </select>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-2">
+                                  <a 
+                                    href={generateWaLink(applicant.no_hp, applicant.nama_lengkap)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                    title="Hubungi WhatsApp"
+                                  >
+                                    <MessageCircle size={18} />
+                                  </a>
+                                  <button 
+                                    onClick={() => { setSelectedApplicant(applicant); setIsEditing(false); }}
+                                    className="p-2 text-slate-600 hover:bg-slate-100 hover:text-brand-600 rounded-lg transition-colors"
+                                    title="Lihat Detail"
+                                  >
+                                    <FileText size={18} />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleDelete(applicant.id)}
+                                    className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                    title="Hapus Data"
+                                  >
+                                    <Trash2 size={18} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+              </div>
+            )}
+          </>
         )}
       </main>
 

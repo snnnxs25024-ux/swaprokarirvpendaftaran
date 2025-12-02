@@ -7,6 +7,23 @@ interface LandingPageProps {
   onAdminClick: () => void; // New prop
 }
 
+// Daftar Semua Logo Klien
+const CLIENTS = [
+  "https://i.imgur.com/b36W5R3.png", // Adira
+  "https://i.imgur.com/6Pl1uTL.png", // BFI
+  "https://i.imgur.com/2hwOpGL.png", // SMS
+  "https://i.imgur.com/4fCkD7r.png", // MAF
+  "https://i.imgur.com/v1JFM1N.png", // MCF
+  "https://i.imgur.com/ORauFxv.png", // New 1
+  "https://i.imgur.com/HOE3vTp.png", // New 2
+  "https://i.imgur.com/8YJzoSf.png", // New 3
+  "https://i.imgur.com/6RvLS3Q.png", // New 4
+  "https://i.imgur.com/FK6Vmza.png", // New 5
+  "https://i.imgur.com/INrbFQC.png", // New 6
+  "https://i.imgur.com/I9wCTBo.png", // New 7
+  "https://i.imgur.com/yvvPva2.png", // New 8
+];
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick }) => {
   return (
     <div className="min-h-screen flex flex-col bg-white">
@@ -43,7 +60,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
       <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
-            src="https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80" 
+            src="/images/hero-bg.jpg" 
+            onError={(e) => e.currentTarget.src="https://images.unsplash.com/photo-1497366216548-37526070297c?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=80"}
             alt="Office" 
             className="w-full h-full object-cover"
           />
@@ -52,7 +70,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
         
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center lg:text-left">
           <div className="lg:w-2/3">
-            <span className="inline-block py-1 px-3 rounded-full bg-brand-500/20 border border-brand-500/30 text-white text-sm font-semibold mb-6 backdrop-blur-sm">
+            <span className="inline-block py-1 px-3 rounded-full bg-white/10 border border-white/20 text-white text-sm font-semibold mb-6 backdrop-blur-sm">
               Solusi SDM Terintegrasi Sejak 2008
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
@@ -86,7 +104,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
           <div className="grid md:grid-cols-2 gap-12 items-center">
             <div className="relative">
               <img 
-                src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" 
+                src="/images/about-us.jpg" 
+                onError={(e) => e.currentTarget.src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"}
                 alt="Meeting" 
                 className="rounded-2xl shadow-2xl relative z-10"
               />
@@ -179,35 +198,44 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
         </div>
       </section>
 
-      {/* Clients Section */}
-      <section id="clients" className="py-20 bg-white border-t border-slate-100">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="flex items-center justify-center gap-2 mb-3 text-brand-600 font-semibold uppercase tracking-wider text-sm">
-               <Handshake size={18} />
-               <span>Klien Kami</span>
-            </div>
-            <h2 className="text-3xl font-bold text-slate-900">Dipercaya Oleh Lembaga Keuangan Terkemuka</h2>
+      {/* Clients Section (Marquee Animation) */}
+      <section id="clients" className="py-16 bg-white border-t border-slate-100 overflow-hidden">
+        {/* Style for animation */}
+        <style>{`
+          @keyframes scroll {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
+          .animate-scroll {
+            animation: scroll 40s linear infinite;
+          }
+          .animate-scroll:hover {
+            animation-play-state: paused;
+          }
+        `}</style>
+
+        <div className="max-w-full mx-auto px-4 mb-10 text-center">
+          <div className="flex items-center justify-center gap-2 mb-3 text-brand-600 font-semibold uppercase tracking-wider text-sm">
+             <Handshake size={18} />
+             <span>Klien Kami</span>
           </div>
-          
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-             <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-gray-100 hover:border-brand-200 transition-colors group">
-                <div className="text-2xl font-black text-gray-400 group-hover:text-yellow-500 transition-colors">adira</div>
-                <div className="text-xs font-bold text-gray-400 group-hover:text-black uppercase tracking-widest mt-1">Finance</div>
-             </div>
-             <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-gray-100 hover:border-brand-200 transition-colors group">
-                <div className="text-2xl font-black text-gray-400 group-hover:text-blue-600 transition-colors">MACF</div>
-                <div className="text-xs font-bold text-gray-400 group-hover:text-black uppercase tracking-widest mt-1">Finance</div>
-             </div>
-             <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-gray-100 hover:border-brand-200 transition-colors group">
-                <div className="text-2xl font-black text-gray-400 group-hover:text-red-600 transition-colors">SMS</div>
-                <div className="text-xs font-bold text-gray-400 group-hover:text-black uppercase tracking-widest mt-1">Finance</div>
-             </div>
-             <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border border-gray-100 hover:border-brand-200 transition-colors group">
-                <div className="text-2xl font-black text-gray-400 group-hover:text-blue-500 transition-colors">BFI</div>
-                <div className="text-xs font-bold text-gray-400 group-hover:text-black uppercase tracking-widest mt-1">Finance</div>
-             </div>
-          </div>
+          <h2 className="text-3xl font-bold text-slate-900">Dipercaya Oleh Lembaga Keuangan Terkemuka</h2>
+        </div>
+        
+        <div className="relative w-full overflow-hidden group">
+           {/* Fade Effect on Edges */}
+           <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-white to-transparent z-10 pointer-events-none"></div>
+           <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-white to-transparent z-10 pointer-events-none"></div>
+
+           {/* Scrolling Container */}
+           <div className="flex animate-scroll w-max hover:cursor-pointer">
+              {/* Duplicate array to create seamless loop */}
+              {[...CLIENTS, ...CLIENTS].map((src, idx) => (
+                 <div key={idx} className="mx-4 w-40 h-24 flex items-center justify-center p-4 bg-white rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                    <img src={src} alt={`Client Logo ${idx}`} className="max-w-full max-h-full object-contain" />
+                 </div>
+              ))}
+           </div>
         </div>
       </section>
 
@@ -246,7 +274,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
               </div>
               <div className="h-full min-h-[300px] bg-slate-800 relative">
                  <img 
-                  src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80" 
+                  src="/images/map-coverage.jpg" 
+                  onError={(e) => e.currentTarget.src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"}
                   alt="Indonesia Map Concept" 
                   className="w-full h-full object-cover opacity-60"
                  />
