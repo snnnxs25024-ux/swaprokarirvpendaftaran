@@ -388,7 +388,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
          </div>
          <div className="absolute inset-0 flex flex-col items-center justify-center text-white px-4">
            <h1 className="text-3xl md:text-5xl font-bold mb-2 tracking-tight text-center">Formulir Pendaftaran Kerja</h1>
-           <p className="text-lg opacity-90 max-w-2xl text-center">Bergabunglah dengan PT Swapro International</p>
+           <p className="text-lg opacity-90 max-w-1xl text-center">Bergabunglah dengan PT Swapro International</p>
          </div>
       </div>
 

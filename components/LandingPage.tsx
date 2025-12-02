@@ -105,7 +105,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
             <div className="relative">
               <img 
                 src="/images/about-us.jpg" 
-                onError={(e) => e.currentTarget.src="https://images.unsplash.com/photo-1552664730-d307ca884978?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"}
+                onError={(e) => e.currentTarget.src="https://i.imgur.com/w36D0Nb.jpeg"}
                 alt="Meeting" 
                 className="rounded-2xl shadow-2xl relative z-10"
               />
@@ -275,7 +275,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
               <div className="h-full min-h-[300px] bg-slate-800 relative">
                  <img 
                   src="/images/map-coverage.jpg" 
-                  onError={(e) => e.currentTarget.src="https://images.unsplash.com/photo-1524178232363-1fb2b075b655?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80"}
+                  onError={(e) => e.currentTarget.src="https://i.imgur.com/WqOCug5.jpeg"}
                   alt="Indonesia Map Concept" 
                   className="w-full h-full object-cover opacity-60"
                  />
