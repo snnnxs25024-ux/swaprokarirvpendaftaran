@@ -2,6 +2,7 @@ import React, { useState, ChangeEvent, FormEvent } from 'react';
 import { FormData, INITIAL_DATA } from '../types';
 import { Section } from './Section';
 import { InputField, SelectField, TextAreaField, CheckboxField, FileUpload } from './InputGroup';
+import { PrivacyPolicy } from './PrivacyPolicy';
 import { 
   Briefcase, 
   User, 
@@ -12,7 +13,8 @@ import {
   Send,
   ArrowLeft,
   Building2,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -56,16 +58,37 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // State baru untuk validasi dan policy
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
   // General Input Handler
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    
+    // Clear specific error when user types
+    if (validationErrors[name]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
-  // Checkbox Handler (Generic for boolean fields)
+  // Checkbox Handler
   const handleCheckboxChange = (name: keyof FormData) => (checked: boolean) => {
     setFormData(prev => ({ ...prev, [name]: checked }));
+     // Clear error specifically for terms
+    if (name === 'termsAccepted' && checked && validationErrors.termsAccepted) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors.termsAccepted;
+        return newErrors;
+      });
+    }
   };
 
   // Special Handler for Experience Status
@@ -73,7 +96,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     setFormData(prev => ({ 
       ...prev, 
       hasPengalamanKerja: hasExperience,
-      // Reset leasing experience if switching to fresh graduate
       hasPengalamanLeasing: hasExperience ? prev.hasPengalamanLeasing : false 
     }));
   };
@@ -81,25 +103,77 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   // File Handler
   const handleFileChange = (name: 'cvFile' | 'ktpFile') => (file: File | null) => {
     setFormData(prev => ({ ...prev, [name]: file }));
+    if (file && validationErrors[name]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
-  // Helper untuk upload file ke Supabase Storage
+  // --- VALIDASI MENDALAM ---
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+
+    // 1. Validasi NIK (Harus 16 Digit)
+    if (!formData.nik) {
+      errors.nik = "NIK wajib diisi.";
+    } else if (formData.nik.length !== 16) {
+      errors.nik = `NIK harus 16 digit. Saat ini: ${formData.nik.length} digit.`;
+    }
+
+    // 2. Validasi No HP (Min 10, Max 14)
+    if (!formData.noHp) {
+      errors.noHp = "Nomor HP wajib diisi.";
+    } else {
+      // Regex untuk memastikan hanya angka (dan opsional tanda + di depan)
+      const phoneRegex = /^[0-9]+$/;
+      if (!phoneRegex.test(formData.noHp)) {
+         errors.noHp = "Nomor HP hanya boleh berisi angka.";
+      } else if (formData.noHp.length < 10) {
+         errors.noHp = "Nomor HP terlalu pendek (min 10 digit).";
+      } else if (formData.noHp.length > 14) {
+         errors.noHp = "Nomor HP terlalu panjang (max 14 digit).";
+      }
+    }
+
+    // 3. Validasi File
+    if (!formData.cvFile) errors.cvFile = "CV wajib diupload.";
+    if (!formData.ktpFile) errors.ktpFile = "KTP wajib diupload.";
+
+    // 4. Validasi Kebijakan Privasi
+    if (!formData.termsAccepted) {
+      errors.termsAccepted = "Anda harus menyetujui Kebijakan Privasi untuk melanjutkan.";
+    }
+
+    setValidationErrors(errors);
+    
+    // Jika ada error, scroll ke elemen error pertama
+    if (Object.keys(errors).length > 0) {
+      const firstErrorKey = Object.keys(errors)[0];
+      const element = document.getElementsByName(firstErrorKey)[0];
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+         window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      return false;
+    }
+
+    return true;
+  };
+
   const uploadFile = async (file: File, folder: string): Promise<string | null> => {
     try {
-      // Membersihkan nama file dan menambahkan timestamp unik
       const cleanName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
       const filePath = `${folder}/${Date.now()}_${cleanName}`;
       
       const { data, error } = await supabase.storage
-        .from('documents') // Pastikan bucket 'documents' sudah dibuat di Supabase
+        .from('documents')
         .upload(filePath, file);
 
-      if (error) {
-        console.error('Upload Error:', error);
-        throw error;
-      }
-
-      // Mendapatkan URL publik (opsional, atau simpan path saja)
+      if (error) throw error;
       return data?.path || null;
     } catch (err) {
       console.error('Error uploading file:', err);
@@ -109,26 +183,23 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setErrorMessage(null);
+
+    // Jalankan Validasi
+    if (!validateForm()) {
+      return; // Stop jika tidak valid
+    }
+
+    setIsSubmitting(true);
     
     try {
-      // 1. Upload Files terlebih dahulu
-      let cvPath = null;
-      let ktpPath = null;
+      // 1. Upload Files
+      const cvPath = await uploadFile(formData.cvFile!, 'cv');
+      const ktpPath = await uploadFile(formData.ktpFile!, 'ktp');
 
-      if (formData.cvFile) {
-        cvPath = await uploadFile(formData.cvFile, 'cv');
-        if (!cvPath) throw new Error("Gagal mengupload CV. Silakan coba lagi.");
-      }
+      if (!cvPath || !ktpPath) throw new Error("Gagal mengupload dokumen. Silakan coba lagi.");
 
-      if (formData.ktpFile) {
-        ktpPath = await uploadFile(formData.ktpFile, 'ktp');
-        if (!ktpPath) throw new Error("Gagal mengupload KTP. Silakan coba lagi.");
-      }
-
-      // 2. Insert Data ke Table 'applicants'
-      // Mapping field camelCase (frontend) ke snake_case (database standard)
+      // 2. Insert Data
       const { error } = await supabase
         .from('applicants')
         .insert({
@@ -180,7 +251,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
           
           alasan_melamar: formData.alasanMelamar,
           
-          // Simpan Path File
           cv_path: cvPath,
           ktp_path: ktpPath,
           
@@ -189,13 +259,12 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
       if (error) throw error;
 
-      // Sukses
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
     } catch (err: any) {
       console.error("Submission Error:", err);
-      setErrorMessage(err.message || "Terjadi kesalahan saat mengirim data. Mohon periksa koneksi internet Anda.");
+      setErrorMessage(err.message || "Terjadi kesalahan sistem. Mohon coba lagi.");
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setIsSubmitting(false);
@@ -211,13 +280,14 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Pendaftaran Berhasil!</h2>
           <p className="text-gray-600 mb-8">
-            Terima kasih, <strong>{formData.namaLengkap}</strong>. Data Anda telah kami simpan di database kami untuk posisi <strong>{formData.posisiDilamar}</strong>.
+            Terima kasih, <strong>{formData.namaLengkap}</strong>. Data Anda telah kami simpan di database kami untuk posisi <strong>{formData.posisiDilamar}</strong>. HRD kami akan segera menghubungi Anda.
           </p>
           <div className="flex flex-col gap-3">
             <button 
                 onClick={() => {
                 setSubmitted(false);
                 setFormData(INITIAL_DATA);
+                setValidationErrors({});
                 }}
                 className="bg-brand-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-brand-700 transition-colors w-full"
             >
@@ -237,6 +307,12 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-12 animate-fadeIn">
+      
+      <PrivacyPolicy 
+        isOpen={isPrivacyModalOpen} 
+        onClose={() => setIsPrivacyModalOpen(false)} 
+      />
+
       {/* Header Image Area with Back Button */}
       <div className="h-64 bg-slate-900 relative overflow-hidden">
          <img 
@@ -261,13 +337,23 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       <main className="max-w-4xl mx-auto px-4 -mt-20 relative z-10">
         
         {errorMessage && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-fadeIn">
             <AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} />
             <div>
               <h4 className="font-semibold text-red-700">Gagal Mengirim</h4>
               <p className="text-sm text-red-600 mt-1">{errorMessage}</p>
             </div>
           </div>
+        )}
+        
+        {Object.keys(validationErrors).length > 0 && (
+           <div className="mb-6 bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-fadeIn">
+             <AlertCircle className="text-orange-500 shrink-0 mt-0.5" size={20} />
+             <div>
+               <h4 className="font-semibold text-orange-800">Periksa Inputan Anda</h4>
+               <p className="text-sm text-orange-700 mt-1">Terdapat data yang belum lengkap atau format tidak sesuai. Silakan cek bagian yang berwarna merah.</p>
+             </div>
+           </div>
         )}
 
         <form onSubmit={handleSubmit}>
@@ -306,7 +392,18 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <InputField label="Nama Lengkap" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} required />
-              <InputField label="NIK (Nomor Induk Kependudukan)" name="nik" value={formData.nik} onChange={handleChange} required type="number" />
+              
+              {/* NIK VALIDATION */}
+              <InputField 
+                label="NIK (Nomor Induk Kependudukan)" 
+                name="nik" 
+                value={formData.nik} 
+                onChange={handleChange} 
+                required 
+                type="number" 
+                placeholder="Harus 16 Digit"
+                error={validationErrors.nik}
+              />
               
               <InputField label="Tempat Lahir" name="tempatLahir" value={formData.tempatLahir} onChange={handleChange} required />
               <InputField label="Tanggal Lahir" name="tanggalLahir" value={formData.tanggalLahir} onChange={handleChange} required type="date" />
@@ -356,7 +453,17 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 ]}
               />
               
-              <InputField label="Nomor HP / WhatsApp" name="noHp" value={formData.noHp} onChange={handleChange} required type="tel" />
+              {/* No HP VALIDATION */}
+              <InputField 
+                label="Nomor HP / WhatsApp" 
+                name="noHp" 
+                value={formData.noHp} 
+                onChange={handleChange} 
+                required 
+                type="tel" 
+                placeholder="08..." 
+                error={validationErrors.noHp}
+              />
               <InputField label="Nama Ayah Kandung" name="namaAyah" value={formData.namaAyah} onChange={handleChange} required />
               <InputField label="Nama Ibu Kandung" name="namaIbu" value={formData.namaIbu} onChange={handleChange} required />
             </div>
@@ -578,6 +685,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
                  <FileText size={18} /> Upload Dokumen
                </h4>
+               <p className="text-xs text-gray-500 mb-4">Maksimal ukuran file 2MB per dokumen.</p>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <FileUpload 
                     label="Upload CV / Resume" 
@@ -585,6 +693,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                     currentFile={formData.cvFile} 
                     onChange={handleFileChange('cvFile')}
                     required
+                    error={validationErrors.cvFile}
+                    maxSizeMB={2}
                  />
                  <FileUpload 
                     label="Upload KTP / Identitas" 
@@ -592,6 +702,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                     currentFile={formData.ktpFile} 
                     onChange={handleFileChange('ktpFile')}
                     required
+                    error={validationErrors.ktpFile}
+                    maxSizeMB={2}
                  />
                </div>
             </div>
@@ -608,6 +720,31 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
               />
             </div>
           </Section>
+
+          {/* Section 7: Persetujuan & Submit */}
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-brand-100 mb-8">
+             <div className="flex items-start gap-4">
+                <div className="shrink-0 text-brand-600 mt-1">
+                   <ShieldCheck size={24} />
+                </div>
+                <div>
+                   <h3 className="text-lg font-bold text-gray-900 mb-2">Persetujuan Data</h3>
+                   <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                      <input 
+                        type="checkbox" 
+                        id="terms"
+                        className="mt-1 w-4 h-4 text-brand-600 rounded border-gray-300 focus:ring-brand-500"
+                        checked={formData.termsAccepted}
+                        onChange={(e) => handleCheckboxChange('termsAccepted')(e.target.checked)}
+                      />
+                      <label htmlFor="terms" className="text-sm text-gray-600 cursor-pointer">
+                        Saya menyatakan bahwa data yang saya isi adalah benar dan saya menyetujui <button type="button" onClick={() => setIsPrivacyModalOpen(true)} className="text-brand-600 font-bold hover:underline">Kebijakan Privasi</button> yang berlaku di PT Swapro International.
+                      </label>
+                   </div>
+                   {validationErrors.termsAccepted && <p className="text-red-500 text-xs mt-2 ml-1">{validationErrors.termsAccepted}</p>}
+                </div>
+             </div>
+          </div>
 
           {/* Submit Action */}
           <div className="sticky bottom-4 z-20">

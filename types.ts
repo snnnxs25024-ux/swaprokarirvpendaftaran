@@ -53,8 +53,9 @@ export interface FormData {
 
   // Final
   alasanMelamar: string;
+  termsAccepted: boolean; // Field baru untuk persetujuan privasi
   
-  // Files (Stored as dummy logic for UI, real app would use File object)
+  // Files
   cvFile: File | null;
   ktpFile: File | null;
 }
@@ -101,6 +102,7 @@ export const INITIAL_DATA: FormData = {
   npwp: false,
   riwayatBurukKredit: false,
   alasanMelamar: '',
+  termsAccepted: false,
   cvFile: null,
   ktpFile: null,
 };
