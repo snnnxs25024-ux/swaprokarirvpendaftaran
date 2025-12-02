@@ -20,7 +20,13 @@ import {
   MessageCircle,
   ChevronRight,
   Filter,
-  Quote
+  Quote,
+  Trash2,
+  Edit,
+  Save,
+  Plus,
+  Copy,
+  ClipboardCheck
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -29,13 +35,29 @@ interface DashboardProps {
 
 type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired';
 
+// PIC Options
+const PIC_OPTIONS = ['SUNAN', 'RENDY', 'DENDY', 'REHAN'];
+
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Selection & Editing
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantDB | null>(null);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
+
+  // COPY DATA EXCEL STATES
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [copyFormData, setCopyFormData] = useState({
+    pic: 'SUNAN',
+    sentra: '',
+    cabang: '',
+    posisi: ''
+  });
 
   useEffect(() => {
     fetchApplicants();
@@ -85,6 +107,125 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     }
   };
 
+  // --- CRUD OPERATIONS ---
+
+  // DELETE
+  const handleDelete = async (id: number) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus data kandidat ini secara permanen?")) return;
+
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // Update Local State
+      setApplicants(prev => prev.filter(app => app.id !== id));
+      
+      if (selectedApplicant?.id === id) {
+        setSelectedApplicant(null);
+        setIsEditing(false);
+      }
+      
+    } catch (err) {
+      console.error('Error deleting:', err);
+      alert('Gagal menghapus data.');
+    }
+  };
+
+  // UPDATE (Open Edit Mode)
+  const startEditing = () => {
+    if (selectedApplicant) {
+      setEditFormData(selectedApplicant);
+      setIsEditing(true);
+    }
+  };
+
+  // UPDATE (Save Changes)
+  const saveChanges = async () => {
+    if (!selectedApplicant || !editFormData) return;
+
+    try {
+      const { error } = await supabase
+        .from('applicants')
+        .update(editFormData)
+        .eq('id', selectedApplicant.id);
+
+      if (error) throw error;
+
+      // Update Local State
+      const updatedApplicant = { ...selectedApplicant, ...editFormData } as ApplicantDB;
+      
+      setApplicants(prev => prev.map(app => 
+        app.id === selectedApplicant.id ? updatedApplicant : app
+      ));
+      
+      setSelectedApplicant(updatedApplicant);
+      setIsEditing(false);
+      alert("Data berhasil diperbarui!");
+
+    } catch (err) {
+      console.error("Error updating:", err);
+      alert("Gagal menyimpan perubahan.");
+    }
+  };
+
+  // Helper for inputs in edit mode
+  const handleEditChange = (field: keyof ApplicantDB, value: any) => {
+    setEditFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // --- EXCEL COPY LOGIC ---
+  const openCopyModal = () => {
+    if (!selectedApplicant) return;
+
+    // Auto-map position
+    let shortPos = 'SO';
+    const appliedPos = selectedApplicant.posisi_dilamar.toUpperCase();
+    if (appliedPos.includes('KOLEKTOR') || appliedPos.includes('REMEDIAL')) {
+        shortPos = 'COLLECTION';
+    } else if (appliedPos.includes('RELATION')) {
+        shortPos = 'RO';
+    }
+
+    setCopyFormData({
+        pic: 'SUNAN',
+        sentra: '',
+        cabang: '',
+        posisi: shortPos
+    });
+    setIsCopyModalOpen(true);
+  };
+
+  const executeCopy = () => {
+    if (!selectedApplicant) return;
+
+    const date = new Date().toLocaleDateString('id-ID'); // Format: DD/MM/YYYY or similar based on locale
+    
+    // Format Urutan: TANGGAL PENGIRIMAN | PIC | SENTRA | NIK | CABANG | NAMA KANDIDAT | POSISI | NO TELP
+    const rowData = [
+        date,
+        copyFormData.pic,
+        copyFormData.sentra,
+        "'" + selectedApplicant.nik, // Add quote to prevent Excel scientific notation
+        copyFormData.cabang,
+        selectedApplicant.nama_lengkap,
+        copyFormData.posisi,
+        "'" + selectedApplicant.no_hp
+    ].join('\t'); // Tab separated
+
+    navigator.clipboard.writeText(rowData).then(() => {
+        alert("Data berhasil disalin! Silakan Paste (Ctrl+V) di Excel.");
+        setIsCopyModalOpen(false);
+    }).catch(err => {
+        console.error('Failed to copy', err);
+        alert("Gagal menyalin ke clipboard.");
+    });
+  };
+
+
   // --- FILTERS ---
   const getFilteredApplicants = () => {
     let filtered = applicants;
@@ -121,7 +262,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
   const generateWaLink = (phone: string, name: string) => {
-    // Sanitize: 0812 -> 62812
     let cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.startsWith('0')) {
       cleanPhone = '62' + cleanPhone.slice(1);
@@ -225,18 +365,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 {activeTab === 'dashboard' ? 'Ringkasan aktivitas rekrutmen.' : 'Kelola data kandidat di tahap ini.'}
               </p>
            </div>
-           {activeTab !== 'dashboard' && (
-             <div className="relative w-72">
-                <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Cari kandidat..." 
-                  className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-             </div>
-           )}
+           
+           <div className="flex items-center gap-4">
+               {/* Add Manual Candidate Button (Placeholder) */}
+               {activeTab !== 'dashboard' && (
+                 <button 
+                    onClick={() => alert("Fitur Tambah Kandidat Manual akan membuka form kosong (Segera Hadir).")} 
+                    className="flex items-center gap-2 bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-700 transition shadow-sm"
+                 >
+                    <Plus size={18} /> Tambah Kandidat
+                 </button>
+               )}
+
+               {activeTab !== 'dashboard' && (
+                 <div className="relative w-72">
+                    <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                    <input 
+                      type="text" 
+                      placeholder="Cari kandidat..." 
+                      className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                    />
+                 </div>
+               )}
+           </div>
         </div>
 
         {/* DASHBOARD VIEW */}
@@ -399,10 +552,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 <MessageCircle size={18} />
                               </a>
                               <button 
-                                onClick={() => setSelectedApplicant(applicant)}
-                                className="px-3 py-1.5 bg-white border border-gray-200 text-slate-600 hover:text-brand-600 hover:border-brand-200 rounded-lg text-xs font-medium transition-all shadow-sm flex items-center gap-1"
+                                onClick={() => { setSelectedApplicant(applicant); setIsEditing(false); }}
+                                className="p-2 text-slate-600 hover:bg-slate-100 hover:text-brand-600 rounded-lg transition-colors"
+                                title="Lihat Detail"
                               >
-                                Detail <ChevronRight size={14} />
+                                <FileText size={18} />
+                              </button>
+                               <button 
+                                onClick={() => handleDelete(applicant.id)}
+                                className="p-2 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                title="Hapus Data"
+                              >
+                                <Trash2 size={18} />
                               </button>
                             </div>
                           </td>
@@ -429,7 +590,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                   {selectedApplicant.nama_lengkap.charAt(0)}
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-gray-900">{selectedApplicant.nama_lengkap}</h2>
+                  <h2 className="text-xl font-bold text-gray-900">
+                      {selectedApplicant.nama_lengkap}
+                  </h2>
                   <div className="flex items-center gap-2 mt-1">
                       <span className="text-sm text-gray-500">Status: </span>
                       <span className={`text-xs font-bold px-2 py-0.5 rounded uppercase ${
@@ -443,14 +606,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 </div>
               </div>
               <div className="flex gap-2">
+                 
+                 {/* COPY TO EXCEL BUTTON */}
+                 {!isEditing && (
+                    <button 
+                        onClick={openCopyModal}
+                        className="flex items-center gap-2 px-3 py-2 text-emerald-600 border border-emerald-200 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition shadow-sm"
+                        title="Salin Data ke Excel"
+                    >
+                        <Copy size={16} /> <span className="hidden sm:inline">Salin Excel</span>
+                    </button>
+                 )}
+
+                 {/* EDIT BUTTON */}
+                 {isEditing ? (
+                    <button 
+                        onClick={saveChanges}
+                        className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition"
+                    >
+                        <Save size={16} /> Simpan
+                    </button>
+                 ) : (
+                    <button 
+                        onClick={startEditing}
+                        className="flex items-center gap-2 px-4 py-2 text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition"
+                    >
+                        <Edit size={16} /> Edit
+                    </button>
+                 )}
+
                  <button onClick={() => setSelectedApplicant(null)} className="p-2 hover:bg-gray-200 rounded-full text-gray-500">
                     <X size={24} />
                  </button>
               </div>
             </div>
 
-            {/* Modal Content - UPDATED FOR FULL DETAIL */}
+            {/* Modal Content - UPDATED FOR FULL DETAIL & EDITING */}
             <div className="p-8 overflow-y-auto bg-white space-y-8">
+               {isEditing && (
+                   <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg mb-4 text-yellow-800 text-sm">
+                       Anda sedang dalam mode <strong>Edit</strong>. Silakan ubah data di bawah ini dan klik <strong>Simpan</strong>.
+                   </div>
+               )}
+
                {/* Files */}
                <div className="flex gap-4">
                   <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex-1 flex items-center justify-between p-4 bg-blue-50 border border-blue-100 rounded-lg hover:bg-blue-100 transition-colors">
@@ -474,22 +672,37 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                   <div>
                       <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2"><User size={18}/> Data Pribadi</h4>
                       <dl className="grid grid-cols-2 gap-x-4 gap-y-4 text-sm">
-                          <dt className="text-gray-500">NIK</dt><dd className="font-medium">{selectedApplicant.nik}</dd>
+                          <dt className="text-gray-500 self-center">Nama Lengkap</dt>
+                          <dd className="font-medium">
+                              {isEditing ? <input className="w-full border p-1 rounded" value={editFormData.nama_lengkap || ''} onChange={e => handleEditChange('nama_lengkap', e.target.value)} /> : selectedApplicant.nama_lengkap}
+                          </dd>
+
+                          <dt className="text-gray-500 self-center">NIK</dt>
+                          <dd className="font-medium">
+                              {isEditing ? <input className="w-full border p-1 rounded" value={editFormData.nik || ''} onChange={e => handleEditChange('nik', e.target.value)} /> : selectedApplicant.nik}
+                          </dd>
+
                           <dt className="text-gray-500">TTL</dt><dd className="font-medium">{selectedApplicant.tempat_lahir}, {new Date(selectedApplicant.tanggal_lahir).toLocaleDateString()}</dd>
                           <dt className="text-gray-500">Usia/JK</dt><dd className="font-medium">{selectedApplicant.umur} Thn / {selectedApplicant.jenis_kelamin}</dd>
                           <dt className="text-gray-500">Status</dt><dd className="font-medium">{selectedApplicant.status_perkawinan}</dd>
                           <dt className="text-gray-500">Agama</dt><dd className="font-medium">{selectedApplicant.agama}</dd>
                           <dt className="text-gray-500">Ibu Kandung</dt><dd className="font-medium">{selectedApplicant.nama_ibu}</dd>
-                          {/* UPDATED: Added Father's Name */}
                           <dt className="text-gray-500">Ayah Kandung</dt><dd className="font-medium">{selectedApplicant.nama_ayah}</dd>
                       </dl>
                   </div>
                   <div>
                       <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2"><MapPin size={18}/> Domisili & Kontak</h4>
                       <dl className="grid grid-cols-[80px_1fr] gap-y-2 text-sm">
-                          <dt className="text-gray-500">No HP</dt><dd className="font-bold text-brand-600">{selectedApplicant.no_hp}</dd>
-                          <dt className="text-gray-500">Domisili</dt><dd className="font-medium">{selectedApplicant.alamat_domisili}</dd>
-                          {/* UPDATED: More specific Address fields */}
+                          <dt className="text-gray-500 self-center">No HP</dt>
+                          <dd className="font-bold text-brand-600">
+                             {isEditing ? <input className="w-full border p-1 rounded" value={editFormData.no_hp || ''} onChange={e => handleEditChange('no_hp', e.target.value)} /> : selectedApplicant.no_hp}
+                          </dd>
+
+                          <dt className="text-gray-500 self-center">Domisili</dt>
+                          <dd className="font-medium">
+                             {isEditing ? <textarea className="w-full border p-1 rounded" rows={2} value={editFormData.alamat_domisili || ''} onChange={e => handleEditChange('alamat_domisili', e.target.value)} /> : selectedApplicant.alamat_domisili}
+                          </dd>
+
                           <dt className="text-gray-500">KTP</dt><dd className="font-medium text-gray-500">{selectedApplicant.alamat_ktp}</dd>
                           <dt className="text-gray-500">Detail</dt><dd className="font-medium">RT/RW {selectedApplicant.rt_rw}, Rumah No. {selectedApplicant.nomor_rumah}</dd>
                           <dt className="text-gray-500">Area</dt><dd className="font-medium">Kel. {selectedApplicant.kelurahan}, Kec. {selectedApplicant.kecamatan}, {selectedApplicant.kota} ({selectedApplicant.kode_pos})</dd>
@@ -504,7 +717,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                       <div className="bg-gray-50 p-4 rounded-lg text-sm">
                           <div className="font-bold text-gray-900">{selectedApplicant.tingkat_pendidikan} - {selectedApplicant.nama_sekolah}</div>
                           <div className="text-gray-600">{selectedApplicant.jurusan}</div>
-                          {/* UPDATED: Added Entry Year */}
                           <div className="text-gray-500 mt-2 text-xs">Periode: {selectedApplicant.tahun_masuk} - {selectedApplicant.tahun_lulus} • IPK {selectedApplicant.ipk}</div>
                       </div>
                   </div>
@@ -512,7 +724,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                       <h4 className="font-bold text-gray-900 border-b pb-2 mb-4 flex items-center gap-2"><Calendar size={18}/> Pengalaman</h4>
                       {selectedApplicant.has_pengalaman_kerja ? (
                           <div className="bg-gray-50 p-4 rounded-lg text-sm">
-                              {/* UPDATED: Added Leasing Highlight */}
                               {selectedApplicant.has_pengalaman_leasing && (
                                 <div className="mb-2 bg-brand-50 text-brand-700 px-3 py-1 rounded text-xs font-bold inline-block border border-brand-200">
                                    Pengalaman Leasing / Multifinance
@@ -563,6 +774,80 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           </div>
         </div>
       )}
+
+      {/* EXCEL COPY MODAL */}
+      {isCopyModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+              <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setIsCopyModalOpen(false)}></div>
+              <div className="relative bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm animate-fadeIn">
+                  <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <ClipboardCheck className="text-emerald-600"/> Salin Data Kandidat
+                  </h3>
+                  <p className="text-xs text-slate-500 mb-4">Lengkapi data berikut sebelum disalin ke Clipboard untuk ditempel ke Excel.</p>
+                  
+                  <div className="space-y-4">
+                      <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">PIC (Pilih)</label>
+                          <select 
+                             className="w-full border rounded p-2 text-sm"
+                             value={copyFormData.pic}
+                             onChange={(e) => setCopyFormData({...copyFormData, pic: e.target.value})}
+                          >
+                             {PIC_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Sentra (Manual)</label>
+                          <input 
+                             type="text" 
+                             className="w-full border rounded p-2 text-sm"
+                             placeholder="Isi Sentra..."
+                             value={copyFormData.sentra}
+                             onChange={(e) => setCopyFormData({...copyFormData, sentra: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Cabang (Manual)</label>
+                          <input 
+                             type="text" 
+                             className="w-full border rounded p-2 text-sm"
+                             placeholder="Isi Cabang..."
+                             value={copyFormData.cabang}
+                             onChange={(e) => setCopyFormData({...copyFormData, cabang: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Posisi (Code)</label>
+                          <select 
+                             className="w-full border rounded p-2 text-sm"
+                             value={copyFormData.posisi}
+                             onChange={(e) => setCopyFormData({...copyFormData, posisi: e.target.value})}
+                          >
+                             <option value="SO">SO</option>
+                             <option value="RO">RO</option>
+                             <option value="COLLECTION">COLLECTION</option>
+                          </select>
+                      </div>
+                  </div>
+
+                  <div className="flex gap-2 mt-6">
+                      <button 
+                        onClick={executeCopy}
+                        className="flex-1 bg-emerald-600 text-white py-2 rounded-lg font-bold text-sm hover:bg-emerald-700 transition"
+                      >
+                          Salin Sekarang
+                      </button>
+                      <button 
+                        onClick={() => setIsCopyModalOpen(false)}
+                        className="px-4 py-2 border border-slate-200 text-slate-600 rounded-lg text-sm hover:bg-slate-50"
+                      >
+                          Batal
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
     </div>
   );
 };

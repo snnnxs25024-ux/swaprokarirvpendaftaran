@@ -15,7 +15,8 @@ import {
   ArrowLeft,
   Building2,
   AlertCircle,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -214,6 +215,21 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     setIsSubmitting(true);
     
     try {
+      // 0. CEK DUPLIKASI NIK
+      // Menggunakan maybeSingle() karena jika data kosong (belum terdaftar) tidak dianggap error
+      const { data: existingUser, error: checkError } = await supabase
+        .from('applicants')
+        .select('id')
+        .eq('nik', formData.nik)
+        .maybeSingle();
+
+      if (checkError) throw checkError;
+
+      if (existingUser) {
+        // Jika NIK ditemukan, lempar error kustom
+        throw new Error("Maaf, NIK Anda sudah terdaftar sebelumnya. Anda tidak dapat mengirim lamaran lebih dari satu kali.");
+      }
+
       // 1. Upload Files
       const cvPath = await uploadFile(formData.cvFile!, 'cv');
       const ktpPath = await uploadFile(formData.ktpFile!, 'ktp');
@@ -285,6 +301,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
     } catch (err: any) {
       console.error("Submission Error:", err);
+      // Tampilkan pesan error (termasuk duplikasi NIK)
       setErrorMessage(err.message || "Terjadi kesalahan sistem. Mohon coba lagi.");
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
@@ -293,30 +310,70 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   };
 
   if (submitted) {
+    // Tentukan Nomor WhatsApp Rekruter Berdasarkan Wilayah
+    let recruiterNumber = "6285718648488"; // Default Jakarta Raya
+    const placementUpper = formData.penempatan.toUpperCase();
+    let regionName = "Jakarta Raya";
+    
+    if (placementUpper.includes("BEKASI")) {
+       recruiterNumber = "628567651009";
+       regionName = "Bekasi Raya";
+    } else if (placementUpper.includes("BOGOR")) {
+       recruiterNumber = "6289618770666";
+       regionName = "Bogor Raya";
+    } else if (placementUpper.includes("DEPOK")) {
+       recruiterNumber = "6289618770666";
+       regionName = "Depok Raya";
+    }
+
+    // Buat Pesan Otomatis
+    const waMessage = `Halo Rekruter ${regionName}, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${formData.penempatan}. Mohon arahan selanjutnya.`;
+    const waLink = `https://wa.me/${recruiterNumber}?text=${encodeURIComponent(waMessage)}`;
+
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white max-w-lg w-full p-8 rounded-2xl shadow-xl text-center">
+        <div className="bg-white max-w-lg w-full p-8 rounded-2xl shadow-xl text-center animate-fadeIn">
           <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckSquare size={40} />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Pendaftaran Berhasil!</h2>
           <p className="text-gray-600 mb-8">
-            Terima kasih, <strong>{formData.namaLengkap}</strong>. Data Anda telah kami simpan di database kami untuk posisi <strong>{formData.posisiDilamar}</strong>. HRD kami akan segera menghubungi Anda.
+            Terima kasih, <strong>{formData.namaLengkap}</strong>. Data Anda telah kami terima.
           </p>
+
+          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-8 text-left">
+             <h4 className="text-green-800 font-bold flex items-center gap-2 mb-2">
+               <MessageCircle size={18} />
+               Langkah Selanjutnya (Wajib):
+             </h4>
+             <p className="text-sm text-green-700 mb-4 leading-relaxed">
+               Untuk mempercepat proses seleksi, silakan konfirmasi pendaftaran Anda langsung ke <strong>Rekruter {regionName}</strong> via WhatsApp.
+             </p>
+             <a 
+               href={waLink}
+               target="_blank"
+               rel="noreferrer"
+               className="flex items-center justify-center gap-2 w-full bg-green-600 text-white font-bold py-3.5 rounded-lg hover:bg-green-700 transition-all shadow-lg shadow-green-200 transform hover:-translate-y-0.5"
+             >
+                <MessageCircle size={20} />
+                Hubungi Rekruter Sekarang
+             </a>
+          </div>
+
           <div className="flex flex-col gap-3">
             <button 
                 onClick={() => {
-                setSubmitted(false);
-                setFormData(INITIAL_DATA);
-                setValidationErrors({});
+                  setSubmitted(false);
+                  setFormData(INITIAL_DATA);
+                  setValidationErrors({});
                 }}
-                className="bg-brand-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-brand-700 transition-colors w-full"
+                className="text-gray-600 hover:text-brand-600 font-medium py-2 transition-colors border border-gray-200 rounded-lg hover:bg-gray-50"
             >
                 Isi Form Baru
             </button>
             <button 
                 onClick={onBack}
-                className="text-gray-500 hover:text-gray-700 font-medium py-2"
+                className="text-gray-400 hover:text-gray-600 text-sm py-2"
             >
                 Kembali ke Beranda
             </button>
