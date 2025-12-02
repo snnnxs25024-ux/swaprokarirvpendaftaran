@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Users, Phone, MapPin, Building2, Briefcase, Handshake, Lock } from 'lucide-react';
 
@@ -13,10 +12,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
       {/* Navbar */}
       <header className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-brand-700 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-              S
-            </div>
+          <div className="flex items-center gap-3">
+            {/* LOGO IMAGE REPLACEMENT */}
+            <img 
+              src="/favicon/swaprologo.png" 
+              alt="Logo Swapro" 
+              className="h-10 w-auto object-contain"
+            />
             <div className="flex flex-col">
               <span className="font-bold text-lg leading-tight text-slate-800 tracking-tight">PT SWAPRO</span>
               <span className="text-xs font-semibold text-brand-600 tracking-widest">INTERNATIONAL</span>
@@ -50,7 +52,8 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
         
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center lg:text-left">
           <div className="lg:w-2/3">
-            <span className="inline-block py-1 px-3 rounded-full bg-brand-500/20 border border-brand-500/30 text-brand-300 text-sm font-semibold mb-6 backdrop-blur-sm">
+            {/* Perbaikan Kontras Badge sesuai request sebelumnya */}
+            <span className="inline-block py-1 px-3 rounded-full bg-white/10 border border-white/20 text-white text-sm font-semibold mb-6 backdrop-blur-sm">
               Solusi SDM Terintegrasi Sejak 2008
             </span>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 leading-tight">
@@ -217,7 +220,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
             
             <div className="grid md:grid-cols-2 items-center">
               <div className="p-10 md:p-16">
-                <div className="flex items-center gap-3 mb-6 text-brand-400">
+                <div className="flex items-center gap-3 mb-6 text-white">
                   <MapPin size={24} />
                   <span className="font-bold tracking-wider uppercase">Jangkauan Nasional</span>
                 </div>
@@ -275,24 +278,28 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
       <footer className="bg-white border-t border-gray-100 py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6 relative">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-bold">
-              S
-            </div>
+            {/* LOGO FOOTER REPLACEMENT */}
+            <img 
+              src="/favicon/swaprologo.png" 
+              alt="Logo Swapro" 
+              className="h-8 w-auto object-contain grayscale hover:grayscale-0 transition-all opacity-80 hover:opacity-100"
+            />
             <span className="font-bold text-slate-800">PT SWAPRO INTERNATIONAL</span>
           </div>
           
-          <p className="text-slate-500 text-sm">
-            &copy; {new Date().getFullYear()} Hak Cipta Dilindungi Undang-Undang.
-          </p>
-
-          {/* BACKDOOR ADMIN BUTTON */}
-          <button 
-             onClick={onAdminClick}
-             className="absolute bottom-0 right-4 p-2 text-gray-200 hover:text-gray-400 transition-colors opacity-50 hover:opacity-100"
-             title="Admin Access"
-          >
-            <Lock size={14} />
-          </button>
+          <div className="flex items-center gap-2">
+            <p className="text-slate-500 text-sm">
+              &copy; {new Date().getFullYear()} Hak Cipta Dilindungi Undang-Undang.
+            </p>
+            {/* BACKDOOR ADMIN BUTTON (Moved inline) */}
+            <button 
+              onClick={onAdminClick}
+              className="p-1 text-gray-300 hover:text-gray-500 transition-colors"
+              title="Admin Access"
+            >
+              <Lock size={12} />
+            </button>
+          </div>
 
         </div>
       </footer>
