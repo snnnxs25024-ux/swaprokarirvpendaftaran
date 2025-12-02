@@ -1,3 +1,4 @@
+
 import React, { useState, ChangeEvent, FormEvent } from 'react';
 import { FormData, INITIAL_DATA } from '../types';
 import { Section } from './Section';
@@ -63,10 +64,30 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
+  // Logic to determine if IPK should be shown (Higher Education)
+  const showIPK = ['D3', 'S1', 'S2'].includes(formData.tingkatPendidikan);
+
   // General Input Handler
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+
+    // 1. Strict NIK Limitation (Max 16 Digits)
+    if (name === 'nik' && value.length > 16) {
+      return; // Stop updating if length exceeds 16
+    }
+
+    setFormData(prev => {
+      const newData = { ...prev, [name]: value };
+      
+      // 2. Clear IPK if education changes to non-college
+      if (name === 'tingkatPendidikan') {
+         const isCollege = ['D3', 'S1', 'S2'].includes(value);
+         if (!isCollege) {
+            newData.ipk = ''; 
+         }
+      }
+      return newData;
+    });
     
     // Clear specific error when user types
     if (validationErrors[name]) {
@@ -533,7 +554,18 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
               <InputField label="Nama Sekolah / Universitas" name="namaSekolah" value={formData.namaSekolah} onChange={handleChange} required />
               
               <InputField label="Jurusan" name="jurusan" value={formData.jurusan} onChange={handleChange} required />
-              <InputField label="IPK / Nilai Rata-rata" name="ipk" value={formData.ipk} onChange={handleChange} required placeholder="Contoh: 3.50" />
+              
+              {/* IPK FIELD - DYNAMIC DISPLAY */}
+              {showIPK && (
+                <InputField 
+                  label="IPK / Nilai Rata-rata" 
+                  name="ipk" 
+                  value={formData.ipk} 
+                  onChange={handleChange} 
+                  required 
+                  placeholder="Contoh: 3.50" 
+                />
+              )}
 
               <InputField label="Tahun Masuk" name="tahunMasuk" value={formData.tahunMasuk} onChange={handleChange} required type="number" placeholder="YYYY" />
               <InputField label="Tahun Lulus" name="tahunLulus" value={formData.tahunLulus} onChange={handleChange} required type="number" placeholder="YYYY" />

@@ -1,3 +1,4 @@
+
 export interface FormData {
   // Job Info
   posisiDilamar: string;
@@ -106,3 +107,53 @@ export const INITIAL_DATA: FormData = {
   cvFile: null,
   ktpFile: null,
 };
+
+// Interface untuk Data dari Database (Snake Case)
+export interface ApplicantDB {
+  id: number;
+  created_at: string;
+  posisi_dilamar: string;
+  penempatan: string;
+  nama_lengkap: string;
+  nik: string;
+  no_hp: string;
+  tempat_lahir: string;
+  tanggal_lahir: string;
+  umur: number;
+  jenis_kelamin: string;
+  status_perkawinan: string;
+  agama: string;
+  nama_ayah: string;
+  nama_ibu: string;
+  alamat_ktp: string;
+  alamat_domisili: string;
+  rt_rw: string;
+  nomor_rumah: string;
+  kelurahan: string;
+  kecamatan: string;
+  kota: string;
+  kode_pos: string;
+  tingkat_pendidikan: string;
+  nama_sekolah: string;
+  jurusan: string;
+  tahun_masuk: string;
+  tahun_lulus: string;
+  ipk: string;
+  has_pengalaman_kerja: boolean;
+  has_pengalaman_leasing: boolean;
+  nama_perusahaan: string;
+  posisi_jabatan: string;
+  periode_kerja: string;
+  deskripsi_tugas: string;
+  kendaraan_pribadi: boolean;
+  ktp_asli: boolean;
+  sim_c: boolean;
+  sim_a: boolean;
+  skck: boolean;
+  npwp: boolean;
+  riwayat_buruk_kredit: boolean;
+  alasan_melamar: string;
+  cv_path: string;
+  ktp_path: string;
+  status: string; // 'new' | 'process' | 'interview' | 'rejected' | 'hired'
+}

@@ -1,11 +1,13 @@
+
 import React from 'react';
-import { Users, Phone, MapPin, Building2, Briefcase, Handshake } from 'lucide-react';
+import { Users, Phone, MapPin, Building2, Briefcase, Handshake, Lock } from 'lucide-react';
 
 interface LandingPageProps {
   onApply: () => void;
+  onAdminClick: () => void; // New prop
 }
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onApply }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick }) => {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navbar */}
@@ -30,7 +32,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply }) => {
             onClick={onApply}
             className="px-5 py-2.5 bg-brand-600 text-white text-sm font-semibold rounded-full hover:bg-brand-700 transition-all shadow-lg shadow-brand-200"
           >
-            Karir / Lamar
+            Daftar
           </button>
         </div>
       </header>
@@ -63,7 +65,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply }) => {
                 onClick={onApply}
                 className="px-8 py-4 bg-brand-600 text-white rounded-lg font-semibold text-lg hover:bg-brand-700 transition-all shadow-xl hover:-translate-y-1"
               >
-                Bergabung Sekarang
+                Lamar Sekarang
               </button>
               <a 
                 href="#about"
@@ -175,7 +177,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply }) => {
         </div>
       </section>
 
-      {/* Clients Section - NEW */}
+      {/* Clients Section */}
       <section id="clients" className="py-20 bg-white border-t border-slate-100">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
@@ -271,16 +273,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply }) => {
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-100 py-12">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6 relative">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-bold">
               S
             </div>
             <span className="font-bold text-slate-800">PT SWAPRO INTERNATIONAL</span>
           </div>
+          
           <p className="text-slate-500 text-sm">
             &copy; {new Date().getFullYear()} Hak Cipta Dilindungi Undang-Undang.
           </p>
+
+          {/* BACKDOOR ADMIN BUTTON */}
+          <button 
+             onClick={onAdminClick}
+             className="absolute bottom-0 right-4 p-2 text-gray-200 hover:text-gray-400 transition-colors opacity-50 hover:opacity-100"
+             title="Admin Access"
+          >
+            <Lock size={14} />
+          </button>
+
         </div>
       </footer>
     </div>
