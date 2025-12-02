@@ -18,7 +18,6 @@ import {
   XCircle,
   CheckCircle,
   MessageCircle,
-  ChevronRight,
   Filter,
   Quote,
   Trash2,
