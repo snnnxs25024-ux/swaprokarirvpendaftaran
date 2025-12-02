@@ -13,10 +13,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
       {/* Navbar */}
       <header className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-brand-700 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-              S
-            </div>
+          <div className="flex items-center gap-3">
+            <img 
+              src="https://i.imgur.com/Lf2IC1Z.png" 
+              alt="Logo Swapro" 
+              className="w-10 h-10 object-contain" 
+            />
             <div className="flex flex-col">
               <span className="font-bold text-lg leading-tight text-slate-800 tracking-tight">PT SWAPRO</span>
               <span className="text-xs font-semibold text-brand-600 tracking-widest">INTERNATIONAL</span>
@@ -274,10 +276,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-100 py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6 relative">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-slate-800 rounded-lg flex items-center justify-center text-white font-bold">
-              S
-            </div>
+          <div className="flex items-center gap-3">
+             <img 
+              src="https://i.imgur.com/Lf2IC1Z.png" 
+              alt="Logo Swapro" 
+              className="w-8 h-8 object-contain" 
+            />
             <span className="font-bold text-slate-800">PT SWAPRO INTERNATIONAL</span>
           </div>
           
