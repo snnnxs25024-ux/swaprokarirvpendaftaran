@@ -1,6 +1,7 @@
 
 export interface FormData {
   // Job Info
+  client: string; // New Field
   posisiDilamar: string;
   penempatan: string;
 
@@ -62,6 +63,7 @@ export interface FormData {
 }
 
 export const INITIAL_DATA: FormData = {
+  client: '',
   posisiDilamar: '',
   penempatan: '',
   namaLengkap: '',
@@ -156,13 +158,22 @@ export interface ApplicantDB {
   cv_path: string;
   ktp_path: string;
   status: string; // 'new' | 'process' | 'interview' | 'rejected' | 'hired'
+  internal_notes: string; // Catatan khusus HRD
 }
 
 // Interface untuk Master Data
+export interface JobClient {
+  id: number;
+  name: string;
+  is_active: boolean; // Fitur Hide
+}
+
 export interface JobPosition {
   id: number;
   name: string;
   value: string;
+  client_id: number;
+  is_active: boolean; // Fitur Hide
 }
 
 export interface JobPlacement {
@@ -170,4 +181,6 @@ export interface JobPlacement {
   label: string;
   value: string;
   recruiter_phone: string;
+  client_id: number;
+  is_active: boolean; // Fitur Hide
 }
