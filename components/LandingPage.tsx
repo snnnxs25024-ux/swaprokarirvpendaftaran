@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Users, Phone, MapPin, Building2, Briefcase, Handshake, Lock } from 'lucide-react';
+import { Users, Phone, MapPin, Building2, Briefcase, Handshake, Lock, Instagram, ExternalLink } from 'lucide-react';
 
 interface LandingPageProps {
   onApply: () => void;
@@ -23,6 +23,22 @@ const CLIENTS = [
   "https://i.imgur.com/I9wCTBo.png", // New 7
   "https://i.imgur.com/yvvPva2.png", // New 8
 ];
+
+const IG_LINK = "https://www.instagram.com/swaprokarir?igsh=MXdvOW56ZjN6ZXJrMA==";
+const TIKTOK_LINK = "https://www.tiktok.com/@swaprointernational_?_r=1&_t=ZS-91vBGI75XfE";
+
+// Custom TikTok Icon (Since older Lucide versions might not have it)
+const TikTokIcon = ({ className }: { className?: string }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    fill="currentColor" 
+    height="1em" 
+    width="1em" 
+    className={className}
+  >
+    <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-5.2 1.74 2.89 2.89 0 012.31-4.64 2.93 2.93 0 01.88.13V9.4a6.84 6.84 0 00-1-.05A6.33 6.33 0 005 20.1a6.34 6.34 0 0010.86-4.43v-7a8.16 8.16 0 004.77 1.52v-3.4a4.85 4.85 0 01-1-.1z" />
+  </svg>
+);
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick }) => {
   return (
@@ -302,16 +318,81 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
         </div>
       </section>
 
+      {/* SOCIAL MEDIA / LIFE AT SWAPRO SECTION */}
+      <section className="py-16 bg-white">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+           <div className="text-center mb-12">
+              <h2 className="text-3xl font-bold text-slate-900 mb-3">Life at Swapro</h2>
+              <p className="text-slate-500">Ikuti keseruan dan aktivitas kami di media sosial</p>
+           </div>
+
+           <div className="grid md:grid-cols-2 gap-6">
+              {/* Instagram Card */}
+              <a 
+                href={IG_LINK} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden rounded-2xl p-8 h-64 flex flex-col justify-between transition-all hover:scale-[1.02] hover:shadow-xl"
+              >
+                 <div className="absolute inset-0 bg-gradient-to-br from-purple-600 via-pink-600 to-orange-500"></div>
+                 <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors"></div>
+                 
+                 <div className="relative z-10 text-white">
+                    <Instagram size={40} className="mb-4" />
+                    <h3 className="text-2xl font-bold">Instagram</h3>
+                    <p className="text-white/80">@swaprokarir</p>
+                 </div>
+                 <div className="relative z-10 flex items-center gap-2 text-white font-semibold group-hover:translate-x-2 transition-transform">
+                    Follow Kami <ExternalLink size={16} />
+                 </div>
+              </a>
+
+              {/* TikTok Card */}
+              <a 
+                href={TIKTOK_LINK} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="group relative overflow-hidden rounded-2xl p-8 h-64 flex flex-col justify-between transition-all hover:scale-[1.02] hover:shadow-xl bg-black"
+              >
+                 {/* Decorative circles for TikTok vibe */}
+                 <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#00f2ea] rounded-full blur-[60px] opacity-40 group-hover:opacity-60 transition-opacity"></div>
+                 <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-[#ff0050] rounded-full blur-[60px] opacity-40 group-hover:opacity-60 transition-opacity"></div>
+                 
+                 <div className="relative z-10 text-white">
+                    <TikTokIcon className="w-10 h-10 mb-4" />
+                    <h3 className="text-2xl font-bold">TikTok</h3>
+                    <p className="text-white/80">@swaprointernational_</p>
+                 </div>
+                 <div className="relative z-10 flex items-center gap-2 text-white font-semibold group-hover:translate-x-2 transition-transform">
+                    Tonton Video <ExternalLink size={16} />
+                 </div>
+              </a>
+           </div>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="bg-white border-t border-gray-100 py-12">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6 relative">
-          <div className="flex items-center gap-3">
-             <img 
-              src="https://i.imgur.com/Lf2IC1Z.png" 
-              alt="Logo Swapro" 
-              className="w-8 h-8 object-contain" 
-            />
-            <span className="font-bold text-slate-800">PT SWAPRO INTERNATIONAL</span>
+          <div className="flex flex-col md:flex-row items-center gap-6">
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://i.imgur.com/Lf2IC1Z.png" 
+                alt="Logo Swapro" 
+                className="w-8 h-8 object-contain" 
+              />
+              <span className="font-bold text-slate-800">PT SWAPRO INTERNATIONAL</span>
+            </div>
+            
+            {/* Social Icons in Footer */}
+            <div className="flex gap-4">
+               <a href={IG_LINK} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-pink-50 hover:text-pink-600 transition-colors" title="Instagram">
+                  <Instagram size={16} />
+               </a>
+               <a href={TIKTOK_LINK} target="_blank" rel="noreferrer" className="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-900 hover:text-white transition-colors" title="TikTok">
+                  <TikTokIcon className="w-4 h-4" />
+               </a>
+            </div>
           </div>
           
           <p className="text-slate-500 text-sm">
