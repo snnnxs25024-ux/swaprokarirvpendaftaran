@@ -50,7 +50,7 @@ const WA_TEMPLATES = [
     id: 'revisi',
     label: '⚠️ Minta Revisi Data',
     color: 'bg-amber-50 text-amber-700 border-amber-200',
-    getMessage: (name: string, pos: string) => `Halo *${name}*,\n\nMohon maaf kami belum dapat memproses lamaran Anda lebih lanjut dikarenakan foto dokumen (KTP/CV) yang terlampir kurang jelas/buram.\n\nMohon kirimkan ulang foto dokumen yang jelas ke nomor ini agar bisa kami proses. Terima kasih.`
+    getMessage: (name: string, _pos: string) => `Halo *${name}*,\n\nMohon maaf kami belum dapat memproses lamaran Anda lebih lanjut dikarenakan foto dokumen (KTP/CV) yang terlampir kurang jelas/buram.\n\nMohon kirimkan ulang foto dokumen yang jelas ke nomor ini agar bisa kami proses. Terima kasih.`
   },
   {
     id: 'tolak',
@@ -62,7 +62,7 @@ const WA_TEMPLATES = [
     id: 'custom',
     label: '💬 Chat Manual',
     color: 'bg-gray-50 text-gray-700 border-gray-200',
-    getMessage: (name: string, pos: string) => `Halo ${name}, `
+    getMessage: (name: string, _pos: string) => `Halo ${name}, `
   }
 ];
 
