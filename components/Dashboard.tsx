@@ -8,7 +8,6 @@ import {
   FileText, 
   Download, 
   X, 
-  XCircle,
   User, 
   LayoutDashboard,
   CheckCircle,
@@ -28,7 +27,7 @@ import {
   MapPin,
   Eye,
   EyeOff,
-  AlertTriangle
+  GraduationCap
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
@@ -38,6 +37,7 @@ interface DashboardProps {
 }
 
 type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 'master_data';
+type DetailTab = 'profile' | 'qualification' | 'documents';
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
@@ -50,6 +50,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantDB | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('profile'); 
+  
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
   
@@ -73,11 +75,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // Input States for Master Data
   const [newClient, setNewClient] = useState('');
   const [newPosition, setNewPosition] = useState({ name: '', client_id: '' });
-  const [newPlacement, setNewPlacement] = useState({ label: '', recruiter_phone: '', client_id: '' });
+  
+  // Placement Creation State (3 Level)
+  const [placementClientFilter, setPlacementClientFilter] = useState(''); 
+  const [placementPositionFilter, setPlacementPositionFilter] = useState(''); 
+  const [newPlacement, setNewPlacement] = useState({ label: '', recruiter_phone: '' }); 
 
+  // --- REALTIME & INITIAL FETCH ---
   useEffect(() => {
+    // 1. Initial Fetch
     fetchApplicants();
     fetchMasterData();
+
+    // 2. Setup Realtime Subscription
+    const channel = supabase.channel('realtime-dashboard')
+      // Listen for APPLICANTS changes
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'applicants' },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            // Add new applicant to top
+            setApplicants((prev) => [payload.new as ApplicantDB, ...prev]);
+          } else if (payload.eventType === 'UPDATE') {
+            // Update existing applicant
+            setApplicants((prev) => prev.map((app) => app.id === payload.new.id ? { ...app, ...payload.new } as ApplicantDB : app));
+            // Update modal if open
+            setSelectedApplicant((prev) => (prev && prev.id === payload.new.id) ? { ...prev, ...payload.new } as ApplicantDB : prev);
+          } else if (payload.eventType === 'DELETE') {
+            // Remove applicant
+            setApplicants((prev) => prev.filter((app) => app.id !== payload.old.id));
+            // Close modal if deleted applicant was open
+            setSelectedApplicant((prev) => (prev && prev.id === payload.old.id) ? null : prev);
+          }
+        }
+      )
+      // Listen for MASTER DATA changes (Just refetch to keep it simple and sorted)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_clients' }, () => fetchMasterData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_positions' }, () => fetchMasterData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_placements' }, () => fetchMasterData())
+      .subscribe();
+
+    // 3. Cleanup
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -87,6 +129,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   useEffect(() => {
     if (selectedApplicant) {
       setNoteInput(selectedApplicant.internal_notes || '');
+      // Reset tab to profile when opening new applicant
+      setActiveDetailTab('profile');
+      setIsEditing(false);
     }
   }, [selectedApplicant]);
 
@@ -113,8 +158,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     try {
       const { error } = await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
-      setApplicants(prev => prev.map(app => app.id === id ? { ...app, status: newStatus } : app));
-      if (selectedApplicant && selectedApplicant.id === id) setSelectedApplicant(prev => prev ? ({...prev, status: newStatus}) : null);
+      // State updated via Realtime
     } catch (err) { alert('Gagal mengubah status'); }
   };
 
@@ -124,9 +168,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     try {
         const { error } = await supabase.from('applicants').update({ internal_notes: noteInput }).eq('id', selectedApplicant.id);
         if (error) throw error;
-        const updated = { ...selectedApplicant, internal_notes: noteInput };
-        setSelectedApplicant(updated);
-        setApplicants(prev => prev.map(a => a.id === updated.id ? updated : a));
+        // State updated via Realtime
         alert("Catatan disimpan.");
     } catch (err) { alert("Gagal menyimpan."); } finally { setSavingNote(false); }
   };
@@ -145,8 +187,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     try {
       const { error } = await supabase.from('applicants').update({ status: newStatus }).in('id', selectedIds);
       if (error) throw error;
-      setApplicants(prev => prev.map(app => selectedIds.includes(app.id) ? { ...app, status: newStatus } : app));
       setSelectedIds([]);
+      // State updated via Realtime
     } catch (err) { alert("Gagal update massal."); }
   };
 
@@ -155,8 +197,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     try {
       const { error } = await supabase.from('applicants').delete().in('id', selectedIds);
       if (error) throw error;
-      setApplicants(prev => prev.filter(app => !selectedIds.includes(app.id)));
       setSelectedIds([]);
+      // State updated via Realtime
     } catch (err) { alert("Gagal hapus massal."); }
   };
 
@@ -164,23 +206,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     if (!window.confirm("Hapus permanen?")) return;
     try {
       await supabase.from('applicants').delete().eq('id', id);
-      setApplicants(prev => prev.filter(app => app.id !== id));
-      if (selectedApplicant?.id === id) setSelectedApplicant(null);
+      // State updated via Realtime
     } catch (err) { alert('Gagal hapus.'); }
   };
 
-  const startEditing = () => { if (selectedApplicant) { setEditFormData(selectedApplicant); setIsEditing(true); } };
+  const startEditing = () => { 
+      if (selectedApplicant) { 
+          // Copy all data to edit form
+          setEditFormData({ ...selectedApplicant }); 
+          setIsEditing(true); 
+      } 
+  };
   
   const saveChanges = async () => {
     if (!selectedApplicant) return;
     try {
-      await supabase.from('applicants').update(editFormData).eq('id', selectedApplicant.id);
-      const updated = { ...selectedApplicant, ...editFormData } as ApplicantDB;
-      setApplicants(prev => prev.map(app => app.id === selectedApplicant.id ? updated : app));
-      setSelectedApplicant(updated);
+      const { error } = await supabase.from('applicants').update(editFormData).eq('id', selectedApplicant.id);
+      if (error) throw error;
       setIsEditing(false);
-      alert("Data updated!");
-    } catch (err) { alert("Gagal update."); }
+      // State updated via Realtime
+      alert("Data berhasil diperbarui!");
+    } catch (err: any) { alert("Gagal update: " + err.message); }
   };
 
   // --- EXCEL COPY ---
@@ -206,16 +252,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
   // --- MASTER DATA HANDLERS ---
-  
-  // 1. Client Handlers
   const handleAddClient = async () => {
     if(!newClient.trim()) return;
     const { error } = await supabase.from('job_clients').insert({ name: newClient, is_active: true });
-    if (!error) { setNewClient(''); fetchMasterData(); }
+    if (!error) { setNewClient(''); }
   };
   const toggleClient = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_clients').update({ is_active: !currentStatus }).eq('id', id);
-    fetchMasterData();
   };
   
   const handleDeleteClient = async (id: number) => {
@@ -223,26 +266,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     if(!window.confirm(confirmMsg)) return;
 
     try {
-        // 1. MANUAL CASCADE: Hapus Anak-anaknya Dulu (Posisi & Penempatan)
-        // Ini memastikan penghapusan berhasil walaupun DB tidak diset ON DELETE CASCADE
-        const { error: errPos } = await supabase.from('job_positions').delete().eq('client_id', id);
-        if (errPos) throw new Error("Gagal hapus Posisi terkait: " + errPos.message);
-
-        const { error: errPlace } = await supabase.from('job_placements').delete().eq('client_id', id);
-        if (errPlace) throw new Error("Gagal hapus Penempatan terkait: " + errPlace.message);
-
-        // 2. Hapus Bapaknya (Klien)
+        const { data: posToDelete } = await supabase.from('job_positions').select('id').eq('client_id', id);
+        if (posToDelete && posToDelete.length > 0) {
+             const posIds = posToDelete.map(p => p.id);
+             await supabase.from('job_placements').delete().in('position_id', posIds);
+             await supabase.from('job_positions').delete().in('id', posIds);
+        }
         const { error: errClient } = await supabase.from('job_clients').delete().eq('id', id);
-        if (errClient) throw new Error("Gagal hapus Klien: " + errClient.message);
-        
+        if (errClient) throw new Error(errClient.message);
         alert("Klien dan data terkait berhasil dihapus.");
-        fetchMasterData(); 
-    } catch (err: any) {
-        alert("GAGAL MENGHAPUS! \n\nDetail Error: " + (err.message || JSON.stringify(err)) + "\n\nSaran: Pastikan Policy RLS di Database sudah 'Enable Delete' untuk public/anon key.");
-    }
+        // State update via realtime
+    } catch (err: any) { alert("GAGAL MENGHAPUS: " + err.message); }
   };
 
-  // 2. Position Handlers
   const handleAddPosition = async () => {
     if(!newPosition.name.trim() || !newPosition.client_id) return alert("Isi nama dan pilih klien");
     const { error } = await supabase.from('job_positions').insert({ 
@@ -251,43 +287,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         client_id: parseInt(newPosition.client_id),
         is_active: true
     });
-    if (!error) { setNewPosition({name: '', client_id: ''}); fetchMasterData(); }
+    if (!error) { setNewPosition({name: '', client_id: ''}); }
   };
   const togglePosition = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_positions').update({ is_active: !currentStatus }).eq('id', id);
-    fetchMasterData();
   };
   const handleDeletePosition = async (id: number) => {
-    if(!window.confirm("Yakin ingin menghapus Posisi ini?")) return;
+    if(!window.confirm("Yakin ingin menghapus Posisi ini? Semua Penempatan di dalamnya akan terhapus.")) return;
+    await supabase.from('job_placements').delete().eq('position_id', id);
     const { error } = await supabase.from('job_positions').delete().eq('id', id);
-    if(!error) fetchMasterData(); 
-    else alert("Gagal hapus: " + error.message + "\nCek Policy RLS Database.");
+    if(error) alert("Gagal hapus: " + error.message);
   };
 
-  // 3. Placement Handlers
   const handleAddPlacement = async () => {
-     if(!newPlacement.label.trim() || !newPlacement.recruiter_phone.trim() || !newPlacement.client_id) return alert("Lengkapi data");
+     if(!newPlacement.label.trim() || !newPlacement.recruiter_phone.trim() || !placementPositionFilter) return alert("Pilih Klien, Posisi, dan lengkapi data");
      const { error } = await supabase.from('job_placements').insert({
         label: newPlacement.label,
         value: newPlacement.label.replace(' - ', ' ').toUpperCase(),
         recruiter_phone: newPlacement.recruiter_phone,
-        client_id: parseInt(newPlacement.client_id),
+        position_id: parseInt(placementPositionFilter),
         is_active: true
      });
-     if (!error) { setNewPlacement({label: '', recruiter_phone: '', client_id: ''}); fetchMasterData(); }
+     if (!error) { setNewPlacement({label: '', recruiter_phone: ''}); }
   };
   const togglePlacement = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_placements').update({ is_active: !currentStatus }).eq('id', id);
-    fetchMasterData();
   };
   const handleDeletePlacement = async (id: number) => {
      if(!window.confirm("Yakin ingin menghapus Penempatan ini?")) return;
      const { error } = await supabase.from('job_placements').delete().eq('id', id);
-     if(!error) fetchMasterData(); 
-     else alert("Gagal hapus: " + error.message + "\nCek Policy RLS Database.");
+     if(error) alert("Gagal hapus: " + error.message);
   };
 
-  // --- FILTERS ---
+  // --- FILTERS & HELPERS ---
   const getFilteredApplicants = () => {
     let filtered = applicants;
     if (activeTab === 'talent_pool') filtered = filtered.filter(a => a.status === 'new' || !a.status);
@@ -314,6 +346,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     process: applicants.filter(a => ['process', 'interview'].includes(a.status)).length,
     hired: applicants.filter(a => a.status === 'hired').length,
     rejected: applicants.filter(a => a.status === 'rejected').length
+  };
+
+  const getPlacementDetails = (p: JobPlacement) => {
+      const pos = positions.find(pos => pos.id === p.position_id);
+      const cli = pos ? clients.find(c => c.id === pos.client_id) : null;
+      return { positionName: pos ? pos.name : 'Unknown Pos', clientName: cli ? cli.name : 'Unknown Client' };
+  };
+
+  const renderEditField = (label: string, field: keyof ApplicantDB, type = 'text', options?: string[]) => {
+      // @ts-ignore
+      const rawVal = isEditing ? (editFormData[field] ?? '') : (selectedApplicant ? selectedApplicant[field] : '-');
+      const val = typeof rawVal === 'boolean' ? String(rawVal) : rawVal;
+      
+      return (
+        <div className="mb-4">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">{label}</label>
+            {isEditing ? (
+                options ? (
+                    <select 
+                        className="w-full border border-gray-300 rounded p-1.5 text-sm bg-white focus:ring-2 focus:ring-brand-500"
+                        // @ts-ignore
+                        value={val}
+                        // @ts-ignore
+                        onChange={e => setEditFormData({...editFormData, [field]: e.target.value})}
+                    >
+                        <option value="">- Pilih -</option>
+                        {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                    </select>
+                ) : (
+                    <input 
+                        type={type}
+                        className="w-full border border-gray-300 rounded p-1.5 text-sm focus:ring-2 focus:ring-brand-500"
+                        value={val as string | number | readonly string[] | undefined}
+                        // @ts-ignore
+                        onChange={e => setEditFormData({...editFormData, [field]: e.target.value})}
+                    />
+                )
+            ) : (
+                <div className="font-medium text-gray-800 text-sm break-words">{val}</div>
+            )}
+        </div>
+      );
   };
 
   return (
@@ -357,17 +431,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               </div>
               
               <div className="p-6">
-                 {/* 1. CLIENTS TAB */}
+                 {/* CLIENTS TAB */}
                  {masterTab === 'clients' && (
                     <div className="max-w-xl">
                        <h3 className="font-bold mb-4 flex items-center gap-2"><Building2 size={18}/> Daftar Klien Mitra</h3>
                        <div className="flex gap-4 mb-6">
                           <input className="flex-1 border p-2 rounded" placeholder="Nama Klien (ex: ADIRA)" value={newClient} onChange={e => setNewClient(e.target.value)} />
                           <button onClick={handleAddClient} className="bg-brand-600 text-white px-4 py-2 rounded">Tambah</button>
-                       </div>
-                       <div className="bg-yellow-50 border border-yellow-200 p-4 rounded mb-4 text-sm text-yellow-800 flex items-start gap-2">
-                          <AlertTriangle size={16} className="shrink-0 mt-0.5" />
-                          <p>Hati-hati saat menghapus Klien. Menghapus Klien akan otomatis menghapus semua Posisi & Penempatan terkait.</p>
                        </div>
                        <table className="w-full text-sm border">
                            <thead className="bg-gray-100"><tr><th className="p-3 text-left">Nama Klien</th><th className="p-3 text-center">Visibility</th><th className="p-3 text-right">Aksi</th></tr></thead>
@@ -376,16 +446,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                    <tr key={c.id} className={`border-t ${!c.is_active ? 'bg-gray-50 opacity-60' : ''}`}>
                                        <td className="p-3 font-bold">{c.name}</td>
                                        <td className="p-3 text-center">
-                                          <button 
-                                            onClick={() => toggleClient(c.id, c.is_active)} 
-                                            className={`p-1.5 rounded-full transition-colors ${c.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`}
-                                            title={c.is_active ? "Sembunyikan" : "Tampilkan"}
-                                          >
+                                          <button onClick={() => toggleClient(c.id, c.is_active)} className={`p-1.5 rounded-full transition-colors ${c.is_active ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-400 hover:bg-slate-100'}`}>
                                              {c.is_active ? <Eye size={20} /> : <EyeOff size={20} />}
                                           </button>
                                        </td>
                                        <td className="p-3 text-right">
-                                          <button onClick={() => handleDeleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="Hapus Permanen"><Trash2 size={18}/></button>
+                                          <button onClick={() => handleDeleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><Trash2 size={18}/></button>
                                        </td>
                                    </tr>
                                ))}
@@ -394,25 +460,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                  )}
 
-                 {/* 2. POSITIONS TAB */}
+                 {/* POSITIONS TAB */}
                  {masterTab === 'positions' && (
                     <div className="max-w-2xl">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><Briefcase size={18}/> Daftar Posisi</h3>
                         <div className="flex gap-4 mb-6">
-                            <select 
-                                className="border p-2 rounded" 
-                                value={newPosition.client_id} 
-                                onChange={e => setNewPosition({...newPosition, client_id: e.target.value})}
-                            >
+                            <select className="border p-2 rounded" value={newPosition.client_id} onChange={e => setNewPosition({...newPosition, client_id: e.target.value})}>
                                 <option value="">-- Pilih Klien --</option>
                                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                             </select>
-                            <input 
-                                className="flex-1 border p-2 rounded" 
-                                placeholder="Nama Posisi (ex: SALES)" 
-                                value={newPosition.name} 
-                                onChange={e => setNewPosition({...newPosition, name: e.target.value})} 
-                            />
+                            <input className="flex-1 border p-2 rounded" placeholder="Nama Posisi (ex: SALES)" value={newPosition.name} onChange={e => setNewPosition({...newPosition, name: e.target.value})} />
                             <button onClick={handleAddPosition} className="bg-brand-600 text-white px-4 py-2 rounded">Tambah</button>
                         </div>
                         <table className="w-full text-sm border">
@@ -440,37 +497,44 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                  )}
 
-                 {/* 3. PLACEMENTS TAB */}
+                 {/* PLACEMENTS TAB */}
                  {masterTab === 'placements' && (
-                    <div className="max-w-4xl">
+                    <div className="max-w-5xl">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><MapPin size={18}/> Daftar Penempatan</h3>
-                        <div className="flex gap-4 mb-6">
-                            <select 
-                                className="border p-2 rounded w-48" 
-                                value={newPlacement.client_id} 
-                                onChange={e => setNewPlacement({...newPlacement, client_id: e.target.value})}
-                            >
-                                <option value="">-- Pilih Klien --</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                            </select>
-                            <input 
-                                className="flex-1 border p-2 rounded" 
-                                placeholder="Label Wilayah (ex: JAKARTA SELATAN)" 
-                                value={newPlacement.label} 
-                                onChange={e => setNewPlacement({...newPlacement, label: e.target.value})} 
-                            />
-                            <input 
-                                className="w-48 border p-2 rounded" 
-                                placeholder="No WA (628...)" 
-                                value={newPlacement.recruiter_phone} 
-                                onChange={e => setNewPlacement({...newPlacement, recruiter_phone: e.target.value})} 
-                            />
-                            <button onClick={handleAddPlacement} className="bg-brand-600 text-white px-4 py-2 rounded">Tambah</button>
+                        <div className="bg-blue-50 p-4 rounded mb-6 text-sm border border-blue-100">
+                           <p className="font-bold text-blue-800 mb-2">Tambah Penempatan Baru (3 Level)</p>
+                           <div className="flex gap-4 items-end flex-wrap">
+                              <div className="flex flex-col gap-1">
+                                 <label className="text-xs font-bold text-gray-500">1. Pilih Klien</label>
+                                 <select className="border p-2 rounded w-48" value={placementClientFilter} onChange={e => {setPlacementClientFilter(e.target.value); setPlacementPositionFilter('');}}>
+                                    <option value="">-- Pilih Klien --</option>
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                 </select>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                 <label className="text-xs font-bold text-gray-500">2. Pilih Posisi</label>
+                                 <select className="border p-2 rounded w-48" value={placementPositionFilter} onChange={e => setPlacementPositionFilter(e.target.value)} disabled={!placementClientFilter}>
+                                    <option value="">-- Pilih Posisi --</option>
+                                    {positions.filter(p => p.client_id === parseInt(placementClientFilter)).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                 </select>
+                              </div>
+                              <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
+                                 <label className="text-xs font-bold text-gray-500">3. Label Wilayah</label>
+                                 <input className="border p-2 rounded w-full" placeholder="ex: JAKARTA SELATAN" value={newPlacement.label} onChange={e => setNewPlacement({...newPlacement, label: e.target.value})} disabled={!placementPositionFilter}/>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                 <label className="text-xs font-bold text-gray-500">4. No WA Rekruter</label>
+                                 <input className="border p-2 rounded w-40" placeholder="628..." value={newPlacement.recruiter_phone} onChange={e => setNewPlacement({...newPlacement, recruiter_phone: e.target.value})} disabled={!placementPositionFilter}/>
+                              </div>
+                              <button onClick={handleAddPlacement} disabled={!placementPositionFilter} className="bg-brand-600 text-white px-6 py-2 rounded h-[42px] font-bold disabled:bg-gray-300">Simpan</button>
+                           </div>
                         </div>
+
                         <table className="w-full text-sm border">
                             <thead className="bg-gray-100">
                                 <tr>
                                     <th className="p-3 text-left">Klien</th>
+                                    <th className="p-3 text-left">Posisi</th>
                                     <th className="p-3 text-left">Wilayah</th>
                                     <th className="p-3 text-left">No. Rekruter</th>
                                     <th className="p-3 text-center">Status</th>
@@ -479,10 +543,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                             </thead>
                             <tbody>
                                 {placements.map(p => {
-                                    const clientName = clients.find(c => c.id === p.client_id)?.name || '-';
+                                    const details = getPlacementDetails(p);
                                     return (
                                         <tr key={p.id} className={`border-t ${!p.is_active ? 'bg-gray-50 opacity-60' : ''}`}>
-                                            <td className="p-3 text-gray-500">{clientName}</td>
+                                            <td className="p-3 text-gray-500">{details.clientName}</td>
+                                            <td className="p-3 text-brand-600 font-medium">{details.positionName}</td>
                                             <td className="p-3 font-bold">{p.label}</td>
                                             <td className="p-3 font-mono text-xs">{p.recruiter_phone}</td>
                                             <td className="p-3 text-center">
@@ -562,7 +627,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                    </div>
                 )}
                 
-                {/* Manual Add Placeholder */}
                 <button className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-700" onClick={() => alert("Fitur Tambah Kandidat Manual akan segera hadir.")}>
                    <Plus size={16}/> Tambah Kandidat
                 </button>
@@ -646,23 +710,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         )}
       </main>
 
-      {/* DETAIL MODAL */}
+      {/* DETAIL MODAL WITH TABS */}
       {selectedApplicant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+            
+            {/* HEADER MODAL */}
             <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
                <div>
                   <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                      {isEditing ? <input className="border rounded px-2" value={editFormData.nama_lengkap} onChange={e=>setEditFormData({...editFormData, nama_lengkap: e.target.value})} /> : selectedApplicant.nama_lengkap}
                      <span className={`text-xs px-2 py-0.5 rounded border ${selectedApplicant.status === 'hired' ? 'bg-green-100 border-green-200 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-600'}`}>{selectedApplicant.status || 'NEW'}</span>
                   </h2>
-                  <p className="text-sm text-gray-500">NIK: {selectedApplicant.nik} • Tgl Lamar: {new Date(selectedApplicant.created_at).toLocaleDateString()}</p>
+                  <p className="text-sm text-gray-500">{isEditing ? <input className="border rounded w-40 text-xs px-1" value={editFormData.nik} onChange={e=>setEditFormData({...editFormData, nik: e.target.value})} placeholder="NIK"/> : `NIK: ${selectedApplicant.nik}`} • Tgl: {new Date(selectedApplicant.created_at).toLocaleDateString()}</p>
                </div>
                <div className="flex gap-2">
                   {!isEditing ? (
                      <>
                         <button onClick={openCopyModal} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 text-sm font-semibold"><Copy size={16}/> Salin Excel</button>
-                        <button onClick={startEditing} className="p-2 hover:bg-gray-200 rounded text-gray-500"><Edit size={20}/></button>
+                        <button onClick={startEditing} className="p-2 hover:bg-gray-200 rounded text-gray-500" title="Edit Data"><Edit size={20}/></button>
                         <button onClick={() => setSelectedApplicant(null)} className="p-2 hover:bg-gray-200 rounded text-gray-500"><X size={24} /></button>
                      </>
                   ) : (
@@ -674,139 +740,171 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2 space-y-8">
-                   {/* INTERNAL NOTES SECTION */}
-                   <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                      <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><StickyNote size={16}/> Catatan Internal HRD</h4>
-                      <textarea 
-                        className="w-full text-sm p-3 border rounded-lg focus:ring-amber-500 mb-2" 
-                        rows={3} 
-                        placeholder="Tulis catatan interview atau status kandidat di sini..."
-                        value={noteInput}
-                        onChange={(e) => setNoteInput(e.target.value)}
-                      />
-                      <div className="flex justify-end">
-                        <button onClick={handleSaveNote} disabled={savingNote} className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded hover:bg-amber-700">
-                           {savingNote ? 'Menyimpan...' : 'Simpan Catatan'}
-                        </button>
-                      </div>
-                   </div>
+            {/* TAB NAVIGATION */}
+            <div className="flex border-b border-gray-100 bg-white px-6">
+                <button 
+                    onClick={() => setActiveDetailTab('profile')} 
+                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'profile' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    <User size={16} /> Profil & Alamat
+                </button>
+                <button 
+                    onClick={() => setActiveDetailTab('qualification')} 
+                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'qualification' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    <Briefcase size={16} /> Kualifikasi
+                </button>
+                <button 
+                    onClick={() => setActiveDetailTab('documents')} 
+                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'documents' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                >
+                    <FileText size={16} /> Dokumen & Catatan
+                </button>
+            </div>
 
-                   {/* DATA PRIBADI */}
-                   <section>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-b pb-2">Data Pribadi</h3>
-                      <div className="grid grid-cols-2 gap-y-4 text-sm">
-                         <div><label className="text-gray-500 block text-xs">Tempat, Tgl Lahir</label><span className="font-medium">{selectedApplicant.tempat_lahir}, {selectedApplicant.tanggal_lahir}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Jenis Kelamin</label><span className="font-medium">{selectedApplicant.jenis_kelamin}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Status Perkawinan</label><span className="font-medium">{selectedApplicant.status_perkawinan}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Agama</label><span className="font-medium">{selectedApplicant.agama}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Nama Ibu Kandung</label><span className="font-medium">{selectedApplicant.nama_ibu}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Nama Ayah Kandung</label><span className="font-medium">{selectedApplicant.nama_ayah}</span></div>
-                         <div><label className="text-gray-500 block text-xs">No HP/WA</label><span className="font-medium text-green-600">{selectedApplicant.no_hp}</span></div>
-                      </div>
-                   </section>
+            {/* TAB CONTENT */}
+            <div className="flex-1 overflow-y-auto p-8 bg-white">
+                
+                {/* 1. PROFILE TAB */}
+                {activeDetailTab === 'profile' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Data Pribadi</h3>
+                            <div className="space-y-1">
+                                {renderEditField("No HP/WA", "no_hp")}
+                                {renderEditField("Tempat Lahir", "tempat_lahir")}
+                                {renderEditField("Tanggal Lahir", "tanggal_lahir", "date")}
+                                {renderEditField("Jenis Kelamin", "jenis_kelamin", "text", ['Laki-laki', 'Perempuan'])}
+                                {renderEditField("Status Perkawinan", "status_perkawinan", "text", ['Belum Menikah', 'Menikah', 'Cerai'])}
+                                {renderEditField("Agama", "agama", "text", ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Lainnya'])}
+                                {renderEditField("Nama Ibu Kandung", "nama_ibu")}
+                                {renderEditField("Nama Ayah Kandung", "nama_ayah")}
+                            </div>
+                        </div>
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Alamat Lengkap</h3>
+                            <div className="space-y-1">
+                                {renderEditField("Alamat KTP", "alamat_ktp")}
+                                {renderEditField("Alamat Domisili", "alamat_domisili")}
+                                <div className="grid grid-cols-2 gap-4">
+                                    {renderEditField("RT/RW", "rt_rw")}
+                                    {renderEditField("No Rumah", "nomor_rumah")}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {renderEditField("Kelurahan", "kelurahan")}
+                                    {renderEditField("Kecamatan", "kecamatan")}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    {renderEditField("Kota/Kab", "kota")}
+                                    {renderEditField("Kode Pos", "kode_pos")}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-                   {/* PENDIDIKAN */}
-                   <section>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-b pb-2">Pendidikan</h3>
-                      <div className="grid grid-cols-2 gap-y-4 text-sm">
-                         <div><label className="text-gray-500 block text-xs">Tingkat</label><span className="font-medium">{selectedApplicant.tingkat_pendidikan}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Institusi</label><span className="font-medium">{selectedApplicant.nama_sekolah}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Jurusan</label><span className="font-medium">{selectedApplicant.jurusan}</span></div>
-                         <div><label className="text-gray-500 block text-xs">IPK</label><span className="font-medium">{selectedApplicant.ipk || '-'}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Tahun Masuk</label><span className="font-medium">{selectedApplicant.tahun_masuk}</span></div>
-                         <div><label className="text-gray-500 block text-xs">Tahun Lulus</label><span className="font-medium">{selectedApplicant.tahun_lulus}</span></div>
-                      </div>
-                   </section>
+                {/* 2. QUALIFICATION TAB */}
+                {activeDetailTab === 'qualification' && (
+                    <div className="space-y-8 animate-fadeIn">
+                        {/* PENDIDIKAN */}
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><GraduationCap size={16}/> Pendidikan</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                {renderEditField("Tingkat", "tingkat_pendidikan", "text", ['SD', 'SMP', 'SMA/SMK', 'D3', 'S1', 'S2'])}
+                                {renderEditField("Nama Sekolah/Univ", "nama_sekolah")}
+                                {renderEditField("Jurusan", "jurusan")}
+                                {renderEditField("IPK", "ipk")}
+                                {renderEditField("Tahun Masuk", "tahun_masuk")}
+                                {renderEditField("Tahun Lulus", "tahun_lulus")}
+                            </div>
+                        </div>
 
-                   {/* PENGALAMAN KERJA */}
-                   <section>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-b pb-2">Pengalaman Kerja</h3>
-                      {selectedApplicant.has_pengalaman_kerja ? (
-                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                            {selectedApplicant.has_pengalaman_leasing && <div className="mb-3"><span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded">PENGALAMAN LEASING</span></div>}
-                            <div className="font-bold text-lg text-slate-800">{selectedApplicant.nama_perusahaan}</div>
-                            <div className="text-brand-600 font-medium mb-2">{selectedApplicant.posisi_jabatan} ({selectedApplicant.periode_kerja})</div>
-                            <p className="text-sm text-gray-600 italic">"{selectedApplicant.deskripsi_tugas}"</p>
-                         </div>
-                      ) : (
-                         <div className="text-gray-500 italic">Fresh Graduate / Belum ada pengalaman relevan.</div>
-                      )}
-                   </section>
+                        {/* PENGALAMAN */}
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><Briefcase size={16}/> Pengalaman Kerja</h3>
+                            {selectedApplicant.has_pengalaman_kerja || isEditing ? (
+                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {renderEditField("Nama Perusahaan", "nama_perusahaan")}
+                                        {renderEditField("Posisi/Jabatan", "posisi_jabatan")}
+                                        {renderEditField("Periode Kerja", "periode_kerja")}
+                                    </div>
+                                    <div className="mt-2">
+                                        {renderEditField("Deskripsi Tugas", "deskripsi_tugas")}
+                                    </div>
+                                    <div className="mt-2">
+                                        <label className="text-xs font-bold text-gray-400 uppercase">Pengalaman Leasing?</label>
+                                        <div className="text-sm font-medium">{selectedApplicant.has_pengalaman_leasing ? "YA" : "TIDAK"}</div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="text-gray-500 italic p-4 bg-gray-50 rounded">Fresh Graduate / Belum ada pengalaman relevan.</div>
+                            )}
+                        </div>
 
-                   {/* ALASAN MELAMAR (New) */}
-                   <section>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-b pb-2">Motivasi & Alasan</h3>
-                      <p className="text-sm text-gray-700 bg-gray-50 p-4 rounded italic">"{selectedApplicant.alasan_melamar || '-'}"</p>
-                   </section>
+                        {/* ASET */}
+                        <div>
+                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><CheckCircle size={16}/> Checklist Aset</h3>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                                <span className={selectedApplicant.kendaraan_pribadi ? "text-green-600 font-medium" : "text-gray-400"}>Motor Pribadi</span>
+                                <span className={selectedApplicant.ktp_asli ? "text-green-600 font-medium" : "text-gray-400"}>KTP Asli</span>
+                                <span className={selectedApplicant.sim_c ? "text-green-600 font-medium" : "text-gray-400"}>SIM C</span>
+                                <span className={selectedApplicant.sim_a ? "text-green-600 font-medium" : "text-gray-400"}>SIM A</span>
+                                <span className={selectedApplicant.skck ? "text-green-600 font-medium" : "text-gray-400"}>SKCK</span>
+                                <span className={selectedApplicant.npwp ? "text-green-600 font-medium" : "text-gray-400"}>NPWP</span>
+                                <span className={selectedApplicant.riwayat_buruk_kredit ? "text-red-500 font-bold" : "text-gray-400"}>Bad Credit History</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-                   {/* ALAMAT */}
-                   <section>
-                      <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-b pb-2">Alamat Lengkap</h3>
-                      <div className="space-y-3 text-sm">
-                         <div>
-                            <label className="text-gray-500 block text-xs">Alamat KTP</label>
-                            <span className="font-medium">{selectedApplicant.alamat_ktp}</span>
-                            <div className="text-gray-500 text-xs mt-1">RT/RW: {selectedApplicant.rt_rw}, No: {selectedApplicant.nomor_rumah}, Kel: {selectedApplicant.kelurahan}, Kec: {selectedApplicant.kecamatan}, {selectedApplicant.kota} ({selectedApplicant.kode_pos})</div>
-                         </div>
-                         <div>
-                            <label className="text-gray-500 block text-xs">Alamat Domisili</label>
-                            <span className="font-medium">{selectedApplicant.alamat_domisili}</span>
-                         </div>
-                      </div>
-                   </section>
-                </div>
+                {/* 3. DOCUMENTS TAB */}
+                {activeDetailTab === 'documents' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
+                        {/* LEFT COLUMN */}
+                        <div className="space-y-6">
+                            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
+                                <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><FileText size={18}/> Berkas Lamaran</h4>
+                                <div className="space-y-3">
+                                    <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
+                                        <div className="bg-red-50 text-red-500 p-2 rounded"><FileText size={20}/></div>
+                                        <div className="flex-1 text-sm font-medium">Curriculum Vitae</div>
+                                        <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
+                                    </a>
+                                    <a href={getFileUrl(selectedApplicant.ktp_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
+                                        <div className="bg-blue-50 text-blue-500 p-2 rounded"><User size={20}/></div>
+                                        <div className="flex-1 text-sm font-medium">Kartu Tanda Penduduk</div>
+                                        <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
+                                    </a>
+                                </div>
+                            </div>
 
-                <div className="space-y-6">
-                   {/* DOKUMEN DOWNLOAD */}
-                   <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                      <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><FileText size={18}/> Berkas Lamaran</h4>
-                      <div className="space-y-3">
-                         <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
-                            <div className="bg-red-50 text-red-500 p-2 rounded"><FileText size={20}/></div>
-                            <div className="flex-1 text-sm font-medium">Curriculum Vitae</div>
-                            <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
-                         </a>
-                         <a href={getFileUrl(selectedApplicant.ktp_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
-                            <div className="bg-blue-50 text-blue-500 p-2 rounded"><User size={20}/></div>
-                            <div className="flex-1 text-sm font-medium">Kartu Tanda Penduduk</div>
-                            <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
-                         </a>
-                      </div>
-                   </div>
+                             {/* ALASAN MELAMAR */}
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Motivasi / Alasan Melamar</h3>
+                                {renderEditField("", "alasan_melamar")}
+                            </div>
+                        </div>
 
-                   {/* CHECKLIST ASET */}
-                   <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                      <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><CheckCircle size={18}/> Checklist Aset</h4>
-                      <ul className="space-y-2 text-sm">
-                         <li className={`flex items-center gap-2 ${selectedApplicant.kendaraan_pribadi ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.kendaraan_pribadi ? <CheckCircle size={16}/> : <XCircle size={16}/>} Kendaraan Pribadi
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.ktp_asli ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.ktp_asli ? <CheckCircle size={16}/> : <XCircle size={16}/>} KTP Asli Fisik
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.sim_c ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.sim_c ? <CheckCircle size={16}/> : <XCircle size={16}/>} SIM C
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.sim_a ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.sim_a ? <CheckCircle size={16}/> : <XCircle size={16}/>} SIM A
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.skck ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.skck ? <CheckCircle size={16}/> : <XCircle size={16}/>} SKCK
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.npwp ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.npwp ? <CheckCircle size={16}/> : <XCircle size={16}/>} NPWP
-                         </li>
-                         <li className={`flex items-center gap-2 ${selectedApplicant.riwayat_buruk_kredit ? 'text-red-600 font-bold' : 'text-green-700'}`}>
-                            {selectedApplicant.riwayat_buruk_kredit ? <AlertTriangle size={16}/> : <CheckCircle size={16}/>} 
-                            {selectedApplicant.riwayat_buruk_kredit ? 'Ada Riwayat Kredit Buruk' : 'Riwayat Kredit Aman'}
-                         </li>
-                      </ul>
-                   </div>
-                </div>
-              </div>
+                        {/* RIGHT COLUMN */}
+                        <div>
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 h-full">
+                                <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><StickyNote size={16}/> Catatan Internal HRD</h4>
+                                <textarea 
+                                    className="w-full text-sm p-3 border rounded-lg focus:ring-amber-500 mb-2 h-40" 
+                                    placeholder="Tulis catatan interview atau status kandidat di sini..."
+                                    value={noteInput}
+                                    onChange={(e) => setNoteInput(e.target.value)}
+                                />
+                                <div className="flex justify-end">
+                                    <button onClick={handleSaveNote} disabled={savingNote} className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded hover:bg-amber-700">
+                                    {savingNote ? 'Menyimpan...' : 'Simpan Catatan'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* COPY MODAL OVERLAY */}

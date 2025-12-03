@@ -181,6 +181,6 @@ export interface JobPlacement {
   label: string;
   value: string;
   recruiter_phone: string;
-  client_id: number;
+  position_id: number; // CHANGED: Now relates to Position, not Client
   is_active: boolean; // Fitur Hide
 }

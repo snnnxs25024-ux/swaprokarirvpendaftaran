@@ -44,7 +44,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       // Fetch Clients
       const { data: clData } = await supabase.from('job_clients').select('*').order('name');
       if (clData) {
-        // HANYA TAMPILKAN YANG AKTIF
         setClientOptions(clData.filter((c: any) => c.is_active).map((c: any) => ({ label: c.name, value: c.id.toString() })));
       }
 
@@ -60,7 +59,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     fetchMasterData();
   }, []);
 
-  // Cascading Logic: When Client changes, update options
+  // Cascading Logic Level 1: Client -> Filter Positions
   useEffect(() => {
     if (formData.client) {
         const clientId = parseInt(formData.client);
@@ -69,16 +68,30 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         const filteredPos = allPositions.filter(p => p.client_id === clientId && p.is_active);
         setPositionOptions(filteredPos.map(p => ({ label: p.name, value: p.value })));
 
-        // Filter Placements by Client AND Active Status
-        const filteredPlace = allPlacements.filter(p => p.client_id === clientId && p.is_active);
-        setPlacementOptions(filteredPlace.map(p => ({ label: p.label, value: p.value }))); 
-
     } else {
-        // Reset if no client selected
+        // Reset
         setPositionOptions([]);
-        setPlacementOptions([]);
     }
-  }, [formData.client, allPositions, allPlacements]);
+  }, [formData.client, allPositions]);
+
+  // Cascading Logic Level 2: Position -> Filter Placements
+  useEffect(() => {
+     if (formData.posisiDilamar && formData.client) {
+        // Cari ID Posisi berdasarkan value string yang dipilih dan Client ID
+        const selectedPosObj = allPositions.find(p => p.value === formData.posisiDilamar && p.client_id === parseInt(formData.client));
+        
+        if (selectedPosObj) {
+            // Filter Placements by POSITION ID (Not Client ID anymore)
+            const filteredPlace = allPlacements.filter(p => p.position_id === selectedPosObj.id && p.is_active);
+            setPlacementOptions(filteredPlace.map(p => ({ label: p.label, value: p.value })));
+        } else {
+            setPlacementOptions([]);
+        }
+
+     } else {
+        setPlacementOptions([]);
+     }
+  }, [formData.posisiDilamar, formData.client, allPositions, allPlacements]);
 
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -89,9 +102,12 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
       
-      // Reset dependent fields if Client changes
+      // Reset dependent fields if Parent changes
       if (name === 'client') {
           newData.posisiDilamar = '';
+          newData.penempatan = '';
+      }
+      if (name === 'posisiDilamar') {
           newData.penempatan = '';
       }
 
@@ -262,10 +278,21 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   };
 
   if (submitted) {
-    // Determine WhatsApp Number based on the selected placement VALUE and CLIENT ID
-    const selectedPlaceObj = allPlacements.find(p => p.value === formData.penempatan && p.client_id === parseInt(formData.client));
-    const recruiterNumber = selectedPlaceObj ? selectedPlaceObj.recruiter_phone : "628123456789";
-    const regionName = selectedPlaceObj ? selectedPlaceObj.label : formData.penempatan;
+    // Determine WhatsApp Number based on the selected placement VALUE and POSITION ID (via value lookup)
+    let recruiterNumber = "628123456789";
+    let regionName = formData.penempatan;
+
+    // 1. Find the selected position object first
+    const selectedPosObj = allPositions.find(p => p.value === formData.posisiDilamar && p.client_id === parseInt(formData.client));
+    
+    if (selectedPosObj) {
+        // 2. Find the placement using position_id
+        const selectedPlaceObj = allPlacements.find(p => p.value === formData.penempatan && p.position_id === selectedPosObj.id);
+        if (selectedPlaceObj) {
+            recruiterNumber = selectedPlaceObj.recruiter_phone;
+            regionName = selectedPlaceObj.label;
+        }
+    }
 
     const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${regionName}. Mohon arahan selanjutnya.`;
     const waLink = `https://wa.me/${recruiterNumber}?text=${encodeURIComponent(waMessage)}`;
@@ -307,8 +334,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         {errorMessage && <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm"><AlertCircle className="text-red-500 shrink-0 mt-0.5" size={20} /><div><h4 className="font-semibold text-red-700">Gagal Mengirim</h4><p className="text-sm text-red-600 mt-1">{errorMessage}</p></div></div>}
         
         <form onSubmit={handleSubmit}>
-          {/* Section 1: Lowongan (Cascading) */}
-          <Section title="Informasi Lowongan" icon={<Briefcase size={20} />} description="Pilih Klien terlebih dahulu, kemudian Posisi dan Penempatan.">
+          {/* Section 1: Lowongan (Cascading 3 Level) */}
+          <Section title="Informasi Lowongan" icon={<Briefcase size={20} />} description="Pilih Klien > Posisi > Penempatan secara berurutan.">
             <div className="space-y-6">
               {/* 1. Client Select */}
               <SelectField 
@@ -321,9 +348,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 options={clientOptions}
               />
               
-              {/* 2. Position & Placement (Dependent) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <SelectField 
+              {/* 2. Position (Depends on Client) */}
+              <SelectField 
                     label="Posisi Dilamar" 
                     name="posisiDilamar" 
                     value={formData.posisiDilamar} 
@@ -333,17 +359,18 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                     error={validationErrors.posisiDilamar}
                     options={positionOptions}
                 />
-                <SelectField 
+
+              {/* 3. Placement (Depends on Position) */}
+               <SelectField 
                     label="Penempatan & Wilayah" 
                     name="penempatan" 
                     value={formData.penempatan} 
                     onChange={handleChange} 
                     required 
-                    disabled={!formData.client} // Disable if no client
+                    disabled={!formData.posisiDilamar} // Disable if no position
                     error={validationErrors.penempatan}
                     options={placementOptions}
                 />
-              </div>
             </div>
           </Section>
 
