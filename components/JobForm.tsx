@@ -1,6 +1,6 @@
 
 import React, { useState, ChangeEvent, FormEvent, useEffect } from 'react';
-import { FormData, INITIAL_DATA, JobPosition, JobPlacement, JobClient } from '../types';
+import { FormData, INITIAL_DATA, JobPosition, JobPlacement } from '../types';
 import { Section } from './Section';
 import { InputField, SelectField, TextAreaField, CheckboxField, FileUpload } from './InputGroup';
 import { PrivacyPolicy } from './PrivacyPolicy';
@@ -45,16 +45,16 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       const { data: clData } = await supabase.from('job_clients').select('*').order('name');
       if (clData) {
         // HANYA TAMPILKAN YANG AKTIF
-        setClientOptions(clData.filter(c => c.is_active).map(c => ({ label: c.name, value: c.id.toString() })));
+        setClientOptions(clData.filter((c: any) => c.is_active).map((c: any) => ({ label: c.name, value: c.id.toString() })));
       }
 
       // Fetch Positions
       const { data: posData } = await supabase.from('job_positions').select('*').order('name');
-      if (posData) setAllPositions(posData);
+      if (posData) setAllPositions(posData as JobPosition[]);
 
       // Fetch Placements
       const { data: placeData } = await supabase.from('job_placements').select('*').order('label');
-      if (placeData) setAllPlacements(placeData);
+      if (placeData) setAllPlacements(placeData as JobPlacement[]);
     };
 
     fetchMasterData();
