@@ -238,7 +238,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
           nama_ibu: formData.namaIbu,
           alamat_ktp: formData.alamatKtp,
           alamat_domisili: formData.alamatDomisili,
-          rt_rw: formData.rtRw,
+          rt_rw: formData.rtRw, 
           nomor_rumah: formData.nomorRumah,
           kelurahan: formData.kelurahan,
           kecamatan: formData.kecamatan,
@@ -423,8 +423,16 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
             <div className="space-y-6">
               <TextAreaField label="Alamat Sesuai KTP" name="alamatKtp" value={formData.alamatKtp} onChange={handleChange} required rows={2} placeholder="Nama jalan, gang, patokan..." />
               <TextAreaField label="Alamat Domisili Saat Ini" name="alamatDomisili" value={formData.alamatDomisili} onChange={handleChange} required rows={2} placeholder="Jika sama dengan KTP, salin alamat KTP..." />
-              <div className="grid grid-cols-3 gap-6"><InputField label="RT/RW" name="rtRw" value={formData.rtRw} onChange={handleChange} required placeholder="001/002" /><InputField label="No Rumah" name="nomorRumah" value={formData.nomorRumah} onChange={handleChange} required /><InputField label="Kode Pos" name="kodePos" value={formData.kodePos} onChange={handleChange} required /></div>
-              <div className="grid grid-cols-3 gap-6"><InputField label="Kelurahan" name="kelurahan" value={formData.kelurahan} onChange={handleChange} required /><InputField label="Kecamatan" name="kecamatan" value={formData.kecamatan} onChange={handleChange} required /><InputField label="Kota/Kab" name="kota" value={formData.kota} onChange={handleChange} required /></div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <InputField label="RT/RW" name="rtRw" value={formData.rtRw} onChange={handleChange} required placeholder="001/002" />
+                <InputField label="No Rumah" name="nomorRumah" value={formData.nomorRumah} onChange={handleChange} required />
+                <InputField label="Kode Pos" name="kodePos" value={formData.kodePos} onChange={handleChange} required />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <InputField label="Kelurahan" name="kelurahan" value={formData.kelurahan} onChange={handleChange} required />
+                <InputField label="Kecamatan" name="kecamatan" value={formData.kecamatan} onChange={handleChange} required />
+                <InputField label="Kota/Kab" name="kota" value={formData.kota} onChange={handleChange} required />
+              </div>
             </div>
           </Section>
 
@@ -442,7 +450,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
           {/* Section 5: Pengalaman */}
           <Section title="Pengalaman Kerja" icon={<Briefcase size={20} />}>
-             <div className="grid grid-cols-2 gap-6 mb-8">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <button 
                     type="button" 
                     onClick={() => handleExperienceStatus(false)} 
