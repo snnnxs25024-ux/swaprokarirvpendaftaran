@@ -8,35 +8,30 @@ import {
   FileText, 
   Download, 
   X, 
-  User, 
-  MapPin, 
-  Briefcase, 
-  Calendar,
-  LayoutDashboard,
-  Inbox,
-  RefreshCcw,
   XCircle,
+  User, 
+  LayoutDashboard,
   CheckCircle,
   MessageCircle,
-  Filter,
-  Quote,
   Trash2,
   Edit,
   Save,
   Plus,
   Copy,
-  ClipboardCheck,
   CheckSquare,
   Square,
   ArrowUpDown,
-  ListFilter,
   Settings,
   StickyNote,
   Building2,
+  Briefcase,
+  MapPin,
   Eye,
   EyeOff,
   AlertTriangle
 } from 'lucide-react';
+
+const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
 
 interface DashboardProps {
   onLogout: () => void;
@@ -44,11 +39,8 @@ interface DashboardProps {
 
 type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 'master_data';
 
-const PIC_OPTIONS = ['SUNAN', 'RENDY', 'DENDY', 'REHAN'];
-
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -58,7 +50,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantDB | null>(null);
-  const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
   
@@ -100,13 +91,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   }, [selectedApplicant]);
 
   const fetchApplicants = async () => {
-    setLoading(true);
     try {
       const { data, error } = await supabase.from('applicants').select('*').order('created_at', { ascending: false });
       if (error) throw error;
       setApplicants(data || []);
     } catch (err) { console.error(err); } 
-    finally { setLoading(false); }
   };
 
   const fetchMasterData = async () => {
@@ -121,13 +110,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
   const updateStatus = async (id: number, newStatus: string) => {
-    setUpdatingId(id);
     try {
       const { error } = await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
       if (error) throw error;
       setApplicants(prev => prev.map(app => app.id === id ? { ...app, status: newStatus } : app));
       if (selectedApplicant && selectedApplicant.id === id) setSelectedApplicant(prev => prev ? ({...prev, status: newStatus}) : null);
-    } catch (err) { alert('Gagal mengubah status'); } finally { setUpdatingId(null); }
+    } catch (err) { alert('Gagal mengubah status'); }
   };
 
   const handleSaveNote = async () => {
@@ -154,24 +142,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (!window.confirm(`Update ${selectedIds.length} data?`)) return;
-    setLoading(true);
     try {
       const { error } = await supabase.from('applicants').update({ status: newStatus }).in('id', selectedIds);
       if (error) throw error;
       setApplicants(prev => prev.map(app => selectedIds.includes(app.id) ? { ...app, status: newStatus } : app));
       setSelectedIds([]);
-    } catch (err) { alert("Gagal update massal."); } finally { setLoading(false); }
+    } catch (err) { alert("Gagal update massal."); }
   };
 
   const handleBulkDelete = async () => {
     if (!window.confirm(`HAPUS ${selectedIds.length} DATA?`)) return;
-    setLoading(true);
     try {
       const { error } = await supabase.from('applicants').delete().in('id', selectedIds);
       if (error) throw error;
       setApplicants(prev => prev.filter(app => !selectedIds.includes(app.id)));
       setSelectedIds([]);
-    } catch (err) { alert("Gagal hapus massal."); } finally { setLoading(false); }
+    } catch (err) { alert("Gagal hapus massal."); }
   };
 
   const handleDelete = async (id: number) => {
@@ -808,64 +794,56 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                             {selectedApplicant.sim_a ? <CheckCircle size={16}/> : <XCircle size={16}/>} SIM A
                          </li>
                          <li className={`flex items-center gap-2 ${selectedApplicant.skck ? 'text-green-700' : 'text-gray-400'}`}>
-                            {selectedApplicant.skck ? <CheckCircle size={16}/> : <XCircle size={16}/>} SKCK Aktif
+                            {selectedApplicant.skck ? <CheckCircle size={16}/> : <XCircle size={16}/>} SKCK
                          </li>
                          <li className={`flex items-center gap-2 ${selectedApplicant.npwp ? 'text-green-700' : 'text-gray-400'}`}>
                             {selectedApplicant.npwp ? <CheckCircle size={16}/> : <XCircle size={16}/>} NPWP
                          </li>
+                         <li className={`flex items-center gap-2 ${selectedApplicant.riwayat_buruk_kredit ? 'text-red-600 font-bold' : 'text-green-700'}`}>
+                            {selectedApplicant.riwayat_buruk_kredit ? <AlertTriangle size={16}/> : <CheckCircle size={16}/>} 
+                            {selectedApplicant.riwayat_buruk_kredit ? 'Ada Riwayat Kredit Buruk' : 'Riwayat Kredit Aman'}
+                         </li>
                       </ul>
-                      {selectedApplicant.riwayat_buruk_kredit && (
-                         <div className="mt-4 p-3 bg-red-50 text-red-600 text-xs font-bold border border-red-100 rounded flex items-center gap-2">
-                            <AlertTriangle size={16}/> BAD CREDIT HISTORY
-                         </div>
-                      )}
                    </div>
                 </div>
               </div>
             </div>
+
+            {/* COPY MODAL OVERLAY */}
+            {isCopyModalOpen && (
+               <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-[60]">
+                  <div className="bg-white p-6 rounded-lg w-96 shadow-xl animate-fadeIn">
+                     <h3 className="font-bold text-lg mb-4">Salin Data ke Excel</h3>
+                     <div className="space-y-3 mb-4">
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1">PIC Rekrutmen</label>
+                           <select className="w-full border p-2 rounded" value={copyFormData.pic} onChange={e=>setCopyFormData({...copyFormData, pic: e.target.value})}>
+                              {PIC_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                           </select>
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Sentra</label>
+                           <input className="w-full border p-2 rounded" value={copyFormData.sentra} onChange={e=>setCopyFormData({...copyFormData, sentra: e.target.value})} placeholder="Contoh: JAKARTA"/>
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Cabang</label>
+                           <input className="w-full border p-2 rounded" value={copyFormData.cabang} onChange={e=>setCopyFormData({...copyFormData, cabang: e.target.value})} placeholder="Contoh: TEBET"/>
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1">Posisi (Singkatan)</label>
+                           <input className="w-full border p-2 rounded" value={copyFormData.posisi} onChange={e=>setCopyFormData({...copyFormData, posisi: e.target.value})} />
+                        </div>
+                     </div>
+                     <div className="flex justify-end gap-2">
+                        <button onClick={() => setIsCopyModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm">Batal</button>
+                        <button onClick={executeCopy} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-bold">Salin Sekarang</button>
+                     </div>
+                  </div>
+               </div>
+            )}
           </div>
         </div>
       )}
-
-      {/* COPY EXCEL MODAL */}
-      {isCopyModalOpen && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <div className="bg-white rounded-xl w-full max-w-sm p-6 shadow-2xl">
-               <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><ClipboardCheck size={20}/> Salin Data Excel</h3>
-               <div className="space-y-3 mb-6">
-                  <div>
-                     <label className="text-xs font-bold text-gray-500">PIC</label>
-                     <select className="w-full border rounded p-2 text-sm" value={copyFormData.pic} onChange={e=>setCopyFormData({...copyFormData, pic: e.target.value})}>
-                        {PIC_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-                     </select>
-                  </div>
-                  <div>
-                     <label className="text-xs font-bold text-gray-500">SENTRA</label>
-                     <input className="w-full border rounded p-2 text-sm" placeholder="Contoh: JAKARTA" value={copyFormData.sentra} onChange={e=>setCopyFormData({...copyFormData, sentra: e.target.value.toUpperCase()})} />
-                  </div>
-                  <div>
-                     <label className="text-xs font-bold text-gray-500">CABANG</label>
-                     <input className="w-full border rounded p-2 text-sm" placeholder="Contoh: TEBET" value={copyFormData.cabang} onChange={e=>setCopyFormData({...copyFormData, cabang: e.target.value.toUpperCase()})} />
-                  </div>
-                  <div>
-                     <label className="text-xs font-bold text-gray-500">POSISI</label>
-                     <select className="w-full border rounded p-2 text-sm" value={copyFormData.posisi} onChange={e=>setCopyFormData({...copyFormData, posisi: e.target.value})}>
-                        <option value="SO">SO</option>
-                        <option value="RO">RO</option>
-                        <option value="COLLECTION">COLLECTION</option>
-                        <option value="SURVEYOR">SURVEYOR</option>
-                        <option value="ADMIN">ADMIN</option>
-                     </select>
-                  </div>
-               </div>
-               <div className="flex gap-2">
-                  <button onClick={executeCopy} className="flex-1 bg-brand-600 text-white py-2 rounded font-bold hover:bg-brand-700">Salin Sekarang</button>
-                  <button onClick={()=>setIsCopyModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded font-bold hover:bg-gray-300">Batal</button>
-               </div>
-            </div>
-         </div>
-      )}
-
     </div>
   );
 };

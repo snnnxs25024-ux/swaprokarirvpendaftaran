@@ -9,13 +9,10 @@ import {
   User, 
   MapPin, 
   GraduationCap, 
-  FileText, 
   CheckSquare, 
   Send,
   ArrowLeft,
-  Building2,
   AlertCircle,
-  ShieldCheck,
   MessageCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
@@ -34,7 +31,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
   // Master Data
-  const [allClients, setAllClients] = useState<JobClient[]>([]);
   const [allPositions, setAllPositions] = useState<JobPosition[]>([]);
   const [allPlacements, setAllPlacements] = useState<JobPlacement[]>([]);
   
@@ -48,7 +44,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       // Fetch Clients
       const { data: clData } = await supabase.from('job_clients').select('*').order('name');
       if (clData) {
-        setAllClients(clData);
         // HANYA TAMPILKAN YANG AKTIF
         setClientOptions(clData.filter(c => c.is_active).map(c => ({ label: c.name, value: c.id.toString() })));
       }
