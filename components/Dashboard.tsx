@@ -27,7 +27,9 @@ import {
   MapPin,
   Eye,
   EyeOff,
-  GraduationCap
+  GraduationCap,
+  Send,
+  ArrowLeft
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
@@ -102,6 +104,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   // WA Modal State
   const [waTarget, setWaTarget] = useState<ApplicantDB | null>(null);
+  const [waStep, setWaStep] = useState<'selection' | 'editing'>('selection');
+  const [waDraft, setWaDraft] = useState('');
 
   // MASTER DATA STATES
   const [clients, setClients] = useState<JobClient[]>([]);
@@ -291,13 +295,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // --- WA HANDLER ---
   const handleOpenWa = (applicant: ApplicantDB) => {
     setWaTarget(applicant);
+    setWaStep('selection');
   };
 
-  const sendWaMessage = (template: typeof WA_TEMPLATES[0]) => {
+  const handleSelectTemplate = (template: typeof WA_TEMPLATES[0]) => {
     if (!waTarget) return;
-    const phone = waTarget.no_hp.replace(/\D/g, '').replace(/^0/, '62');
     const msg = template.getMessage(waTarget.nama_lengkap, waTarget.posisi_dilamar);
-    const link = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    setWaDraft(msg);
+    setWaStep('editing');
+  };
+
+  const handleSendWaFinal = () => {
+    if (!waTarget) return;
+    // Format nomor HP (Ganti 08/62/0 di depan dengan 62)
+    const phone = waTarget.no_hp.replace(/\D/g, '').replace(/^0/, '62');
+    const link = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(waDraft)}`;
     window.open(link, '_blank');
     setWaTarget(null);
   };
@@ -763,22 +775,52 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* WA TEMPLATE MODAL */}
       {waTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
-              <h3 className="font-bold text-gray-800 flex items-center gap-2"><MessageCircle className="text-green-600" size={20}/> Hubungi {waTarget.nama_lengkap}</h3>
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                  <MessageCircle className="text-green-600" size={20}/> 
+                  {waStep === 'selection' ? `Hubungi ${waTarget.nama_lengkap}` : 'Edit Pesan WhatsApp'}
+              </h3>
               <button onClick={() => setWaTarget(null)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
             </div>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-gray-500 mb-2">Pilih template pesan WhatsApp:</p>
-              {WA_TEMPLATES.map(t => (
-                <button 
-                  key={t.id}
-                  onClick={() => sendWaMessage(t)}
-                  className={`w-full text-left p-3 rounded-lg border flex items-center gap-3 transition-all hover:shadow-md ${t.color}`}
-                >
-                  <div className="font-bold text-sm">{t.label}</div>
-                </button>
-              ))}
+            
+            <div className="p-4 overflow-y-auto">
+              {waStep === 'selection' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-500 mb-2">Pilih template pesan:</p>
+                    {WA_TEMPLATES.map(t => (
+                        <button 
+                        key={t.id}
+                        onClick={() => handleSelectTemplate(t)}
+                        className={`w-full text-left p-3 rounded-lg border flex items-center gap-3 transition-all hover:shadow-md ${t.color}`}
+                        >
+                        <div className="font-bold text-sm">{t.label}</div>
+                        </button>
+                    ))}
+                  </div>
+              ) : (
+                  <div className="space-y-4">
+                      <textarea 
+                          className="w-full h-48 border rounded-lg p-3 text-sm focus:ring-2 focus:ring-green-500"
+                          value={waDraft}
+                          onChange={(e) => setWaDraft(e.target.value)}
+                      />
+                      <div className="flex gap-3">
+                          <button 
+                              onClick={() => setWaStep('selection')}
+                              className="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-semibold flex items-center justify-center gap-2"
+                          >
+                              <ArrowLeft size={16} /> Kembali
+                          </button>
+                          <button 
+                              onClick={handleSendWaFinal}
+                              className="flex-[2] py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-semibold flex items-center justify-center gap-2"
+                          >
+                              <Send size={16} /> Kirim WhatsApp
+                          </button>
+                      </div>
+                  </div>
+              )}
             </div>
           </div>
         </div>

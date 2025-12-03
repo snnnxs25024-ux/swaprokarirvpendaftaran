@@ -16,7 +16,9 @@ import {
   MessageCircle,
   ShieldCheck,
   Check,
-  Info
+  Info,
+  Rocket,
+  ArrowRight
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -299,22 +301,68 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     }
 
     const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${regionName}. Mohon arahan selanjutnya.`;
-    const waLink = `https://wa.me/${recruiterNumber}?text=${encodeURIComponent(waMessage)}`;
+    // Gunakan api.whatsapp.com untuk kehandalan lebih baik daripada wa.me
+    const waLink = `https://api.whatsapp.com/send?phone=${recruiterNumber}&text=${encodeURIComponent(waMessage)}`;
 
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white max-w-lg w-full p-8 rounded-2xl shadow-xl text-center animate-fadeIn">
-          <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6"><CheckSquare size={40} /></div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Pendaftaran Berhasil!</h2>
-          <p className="text-gray-600 mb-8">Terima kasih, <strong>{formData.namaLengkap}</strong>. Data Anda telah kami terima.</p>
-          <div className="bg-green-50 border border-green-200 rounded-xl p-6 mb-8 text-left">
-             <h4 className="text-green-800 font-bold flex items-center gap-2 mb-2"><MessageCircle size={18} />Langkah Selanjutnya (Wajib):</h4>
-             <p className="text-sm text-green-700 mb-4 leading-relaxed">Silakan konfirmasi ke <strong>Rekruter {regionName}</strong> via WhatsApp.</p>
-             <a href={waLink} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full bg-green-600 text-white font-bold py-3.5 rounded-lg hover:bg-green-700 transition-all shadow-lg">
-                <MessageCircle size={20} /> Hubungi Rekruter Sekarang
-             </a>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Decor */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+            <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-brand-200/30 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-200/30 rounded-full blur-3xl"></div>
+        </div>
+
+        <div className="bg-white max-w-lg w-full rounded-3xl shadow-2xl overflow-hidden relative z-10 animate-scaleIn">
+          {/* Header Celebration */}
+          <div className="bg-slate-900 p-10 text-center relative overflow-hidden">
+             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+             <div className="relative z-10">
+                <div className="w-24 h-24 bg-gradient-to-tr from-brand-400 to-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-brand-900/50 border-4 border-slate-800">
+                    <Rocket size={48} className="text-white animate-bounce-slow" />
+                </div>
+                <h2 className="text-3xl font-bold text-white mb-2">Lamaran Terkirim! 🚀</h2>
+                <p className="text-brand-100">Terima kasih, {formData.namaLengkap}.</p>
+             </div>
           </div>
-          <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-sm py-2">Kembali ke Beranda</button>
+
+          <div className="p-8">
+             <p className="text-slate-600 text-center mb-8 leading-relaxed">
+                Profil Anda luar biasa! Data Anda sudah masuk ke sistem kami.
+                <br/>Satu langkah lagi untuk memulai karir impianmu.
+             </p>
+
+             {/* Golden Ticket Section */}
+             <div className="bg-amber-50 border-2 border-dashed border-amber-300 rounded-2xl p-6 relative">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-3 text-xs font-bold text-amber-500 uppercase tracking-widest border border-amber-200 rounded-full">
+                    Langkah Wajib
+                </div>
+                
+                <div className="text-center">
+                    <h4 className="font-bold text-slate-800 mb-2 flex items-center justify-center gap-2">
+                        <MessageCircle className="text-green-600" /> Konfirmasi ke HRD
+                    </h4>
+                    <p className="text-sm text-slate-600 mb-4">
+                        Segera hubungi <strong>Rekruter {regionName}</strong> untuk validasi data Anda.
+                    </p>
+                    
+                    <a 
+                        href={waLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-lg hover:shadow-green-200 hover:-translate-y-1 group"
+                    >
+                        <span>Lanjut Chat HRD Sekarang</span>
+                        <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
+                    </a>
+                </div>
+             </div>
+
+             <div className="mt-8 text-center">
+                <button onClick={onBack} className="text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors">
+                    Kembali ke Halaman Utama
+                </button>
+             </div>
+          </div>
         </div>
       </div>
     );
