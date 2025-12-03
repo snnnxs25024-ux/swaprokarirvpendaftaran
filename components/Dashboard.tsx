@@ -32,6 +32,40 @@ import {
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
 
+// TEMPLATE WHATSAPP
+const WA_TEMPLATES = [
+  {
+    id: 'interview',
+    label: '📅 Undangan Interview',
+    color: 'bg-blue-50 text-blue-700 border-blue-200',
+    getMessage: (name: string, pos: string) => `Halo Sdr/i *${name}*, kami dari Tim Rekrutmen PT Swapro International.\n\nBerdasarkan lamaran Anda untuk posisi *${pos}*, kami ingin mengundang Anda untuk mengikuti sesi Interview pada:\n\nHari/Tgl: \nJam: \nLokasi: \n\nMohon konfirmasi kehadirannya. Terima kasih.`
+  },
+  {
+    id: 'lolos',
+    label: '✅ Lolos Berkas',
+    color: 'bg-green-50 text-green-700 border-green-200',
+    getMessage: (name: string, pos: string) => `Selamat Pagi/Siang *${name}*,\n\nSelamat! Berkas lamaran Anda untuk posisi *${pos}* telah lolos seleksi administrasi di PT Swapro International.\n\nMohon kesediaannya untuk menunggu jadwal interview selanjutnya yang akan kami informasikan segera.`
+  },
+  {
+    id: 'revisi',
+    label: '⚠️ Minta Revisi Data',
+    color: 'bg-amber-50 text-amber-700 border-amber-200',
+    getMessage: (name: string, pos: string) => `Halo *${name}*,\n\nMohon maaf kami belum dapat memproses lamaran Anda lebih lanjut dikarenakan foto dokumen (KTP/CV) yang terlampir kurang jelas/buram.\n\nMohon kirimkan ulang foto dokumen yang jelas ke nomor ini agar bisa kami proses. Terima kasih.`
+  },
+  {
+    id: 'tolak',
+    label: '❌ Penolakan Halus',
+    color: 'bg-red-50 text-red-700 border-red-200',
+    getMessage: (name: string, pos: string) => `Halo *${name}*,\n\nTerima kasih telah melamar di PT Swapro International. Untuk saat ini kualifikasi Anda belum sesuai dengan kebutuhan kami untuk posisi *${pos}*.\n\nData Anda akan kami simpan untuk kebutuhan lowongan di masa mendatang. Sukses selalu!`
+  },
+  {
+    id: 'custom',
+    label: '💬 Chat Manual',
+    color: 'bg-gray-50 text-gray-700 border-gray-200',
+    getMessage: (name: string, pos: string) => `Halo ${name}, `
+  }
+];
+
 interface DashboardProps {
   onLogout: () => void;
 }
@@ -65,6 +99,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     cabang: '',
     posisi: ''
   });
+
+  // WA Modal State
+  const [waTarget, setWaTarget] = useState<ApplicantDB | null>(null);
 
   // MASTER DATA STATES
   const [clients, setClients] = useState<JobClient[]>([]);
@@ -251,6 +288,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     navigator.clipboard.writeText(rowData).then(() => { alert("Disalin!"); setIsCopyModalOpen(false); });
   };
 
+  // --- WA HANDLER ---
+  const handleOpenWa = (applicant: ApplicantDB) => {
+    setWaTarget(applicant);
+  };
+
+  const sendWaMessage = (template: typeof WA_TEMPLATES[0]) => {
+    if (!waTarget) return;
+    const phone = waTarget.no_hp.replace(/\D/g, '').replace(/^0/, '62');
+    const msg = template.getMessage(waTarget.nama_lengkap, waTarget.posisi_dilamar);
+    const link = `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+    window.open(link, '_blank');
+    setWaTarget(null);
+  };
+
   // --- MASTER DATA HANDLERS ---
   const handleAddClient = async () => {
     if(!newClient.trim()) return;
@@ -338,8 +389,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const displayedApplicants = getFilteredApplicants();
   const getFileUrl = (path: string) => path ? supabase.storage.from('documents').getPublicUrl(path).data.publicUrl : '#';
-  const generateWaLink = (phone: string, name: string) => `https://wa.me/${phone.replace(/\D/g, '').replace(/^0/, '62')}?text=${encodeURIComponent(`Halo ${name}, info lamaran kerja.`)}`;
-
+  
   const stats = {
     total: applicants.length,
     new: applicants.filter(a => a.status === 'new' || !a.status).length,
@@ -692,7 +742,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                         </td>
                         <td className="p-4 text-right">
                            <div className="flex items-center justify-end gap-2">
-                              <a href={generateWaLink(app.no_hp, app.nama_lengkap)} target="_blank" rel="noreferrer" className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="WhatsApp"><MessageCircle size={18} /></a>
+                              <button onClick={() => handleOpenWa(app)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="WhatsApp"><MessageCircle size={18} /></button>
                               <button onClick={() => setSelectedApplicant(app)} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg" title="Detail"><FileText size={18} /></button>
                               <button onClick={() => handleDelete(app.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg" title="Hapus"><Trash2 size={18} /></button>
                            </div>
@@ -709,6 +759,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           </>
         )}
       </main>
+
+      {/* WA TEMPLATE MODAL */}
+      {waTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="p-4 border-b flex justify-between items-center bg-gray-50">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2"><MessageCircle className="text-green-600" size={20}/> Hubungi {waTarget.nama_lengkap}</h3>
+              <button onClick={() => setWaTarget(null)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+            </div>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-gray-500 mb-2">Pilih template pesan WhatsApp:</p>
+              {WA_TEMPLATES.map(t => (
+                <button 
+                  key={t.id}
+                  onClick={() => sendWaMessage(t)}
+                  className={`w-full text-left p-3 rounded-lg border flex items-center gap-3 transition-all hover:shadow-md ${t.color}`}
+                >
+                  <div className="font-bold text-sm">{t.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* DETAIL MODAL WITH TABS */}
       {selectedApplicant && (
