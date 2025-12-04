@@ -1,5 +1,4 @@
-
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { ApplicantDB, JobPlacement, JobPosition, JobClient } from '../types';
 import { 
@@ -29,10 +28,127 @@ import {
   EyeOff,
   GraduationCap,
   Send,
-  ArrowLeft
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  TrendingUp,
+  PieChart,
+  BarChart3,
+  Users
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
+const ITEMS_PER_PAGE = 20;
+
+// --- SIMPLE CHART COMPONENTS (SVG/CSS) ---
+const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: string }) => {
+    if (data.length < 2) return <div className="h-32 flex items-center justify-center text-gray-400 text-xs">Data tidak cukup</div>;
+    const max = Math.max(...data, 1);
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * 100;
+        const y = 100 - (val / max) * 100;
+        return `${x},${y}`;
+    }).join(' ');
+
+    return (
+        <div className="h-40 w-full relative">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+                {/* Grid Lines */}
+                <line x1="0" y1="25" x2="100" y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
+                <line x1="0" y1="50" x2="100" y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
+                <line x1="0" y1="75" x2="100" y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
+                {/* The Line */}
+                <polyline
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2"
+                    points={points}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                />
+                {/* Area under line (optional, for gradient effect) */}
+                <polygon 
+                    fill={color} 
+                    fillOpacity="0.1" 
+                    points={`0,100 ${points} 100,100`} 
+                />
+                {/* Dots */}
+                {data.map((val, i) => {
+                     const x = (i / (data.length - 1)) * 100;
+                     const y = 100 - (val / max) * 100;
+                     return (
+                        <circle key={i} cx={x} cy={y} r="1.5" fill="white" stroke={color} strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                     )
+                })}
+            </svg>
+        </div>
+    );
+};
+
+const SimpleDonutChart = ({ data }: { data: { label: string, value: number, color: string }[] }) => {
+    const total = data.reduce((acc, curr) => acc + curr.value, 0);
+    let cumulativePercent = 0;
+    
+    if (total === 0) return <div className="h-40 flex items-center justify-center text-gray-400 text-xs">Belum ada data</div>;
+
+    const gradientParts = data.map(item => {
+        const start = cumulativePercent;
+        const percent = (item.value / total) * 100;
+        cumulativePercent += percent;
+        return `${item.color} ${start}% ${cumulativePercent}%`;
+    }).join(', ');
+
+    return (
+        <div className="flex items-center gap-6">
+            <div 
+                className="w-32 h-32 rounded-full relative shrink-0"
+                style={{ background: `conic-gradient(${gradientParts})` }}
+            >
+                <div className="absolute inset-4 bg-white rounded-full flex items-center justify-center flex-col">
+                    <span className="text-xs text-gray-400">Total</span>
+                    <span className="text-xl font-bold text-gray-800">{total}</span>
+                </div>
+            </div>
+            <div className="flex-1 space-y-2">
+                {data.map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full" style={{background: item.color}}></span>
+                            <span className="text-gray-600">{item.label}</span>
+                        </div>
+                        <span className="font-bold text-gray-800">{item.value} ({Math.round((item.value/total)*100)}%)</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const SimpleBarChart = ({ data }: { data: { label: string, value: number }[] }) => {
+    if (data.length === 0) return <div className="h-40 flex items-center justify-center text-gray-400 text-xs">Belum ada data</div>;
+    const max = Math.max(...data.map(d => d.value), 1);
+    
+    return (
+        <div className="space-y-3">
+            {data.map((item, idx) => (
+                <div key={idx} className="space-y-1">
+                    <div className="flex justify-between text-xs">
+                        <span className="text-gray-600 font-medium truncate max-w-[150px]">{item.label}</span>
+                        <span className="text-gray-800 font-bold">{item.value}</span>
+                    </div>
+                    <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden">
+                        <div 
+                            className="h-full bg-brand-500 rounded-full transition-all duration-500" 
+                            style={{ width: `${(item.value / max) * 100}%` }} 
+                        />
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 // TEMPLATE WHATSAPP
 const WA_TEMPLATES = [
@@ -76,14 +192,29 @@ type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 
 type DetailTab = 'profile' | 'qualification' | 'documents';
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
+  // DATA STATES
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  // DASHBOARD METRICS STATE
+  const [dashboardMetrics, setDashboardMetrics] = useState({
+      trend: [] as number[],
+      education: [] as {label: string, value: number, color: string}[],
+      positions: [] as {label: string, value: number}[],
+      gender: { male: 0, female: 0 }
+  });
+
+  // PAGINATION & FILTER STATES
   const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   
   const [searchTerm, setSearchTerm] = useState('');
   const [filterClient, setFilterClient] = useState('');
   const [filterEducation, setFilterEducation] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
+  // SELECTION & MODAL STATES
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [selectedApplicant, setSelectedApplicant] = useState<ApplicantDB | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('profile'); 
@@ -113,75 +244,130 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [placements, setPlacements] = useState<JobPlacement[]>([]);
   const [masterTab, setMasterTab] = useState<'clients' | 'positions' | 'placements'>('clients');
 
-  // Input States for Master Data
   const [newClient, setNewClient] = useState('');
   const [newPosition, setNewPosition] = useState({ name: '', client_id: '' });
-  
-  // Placement Creation State (3 Level)
   const [placementClientFilter, setPlacementClientFilter] = useState(''); 
   const [placementPositionFilter, setPlacementPositionFilter] = useState(''); 
   const [newPlacement, setNewPlacement] = useState({ label: '', recruiter_phone: '' }); 
 
-  // --- REALTIME & INITIAL FETCH ---
-  useEffect(() => {
-    // 1. Initial Fetch
-    fetchApplicants();
-    fetchMasterData();
+  // Stats Counters
+  const [stats, setStats] = useState({ total: 0, new: 0, process: 0, hired: 0, rejected: 0 });
 
-    // 2. Setup Realtime Subscription
-    const channel = supabase.channel('realtime-dashboard')
-      // Listen for APPLICANTS changes
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'applicants' },
-        (payload) => {
-          if (payload.eventType === 'INSERT') {
-            // Add new applicant to top
-            setApplicants((prev) => [payload.new as ApplicantDB, ...prev]);
-          } else if (payload.eventType === 'UPDATE') {
-            // Update existing applicant
-            setApplicants((prev) => prev.map((app) => app.id === payload.new.id ? { ...app, ...payload.new } as ApplicantDB : app));
-            // Update modal if open
-            setSelectedApplicant((prev) => (prev && prev.id === payload.new.id) ? { ...prev, ...payload.new } as ApplicantDB : prev);
-          } else if (payload.eventType === 'DELETE') {
-            // Remove applicant
-            setApplicants((prev) => prev.filter((app) => app.id !== payload.old.id));
-            // Close modal if deleted applicant was open
-            setSelectedApplicant((prev) => (prev && prev.id === payload.old.id) ? null : prev);
-          }
-        }
-      )
-      // Listen for MASTER DATA changes (Just refetch to keep it simple and sorted)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_clients' }, () => fetchMasterData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_positions' }, () => fetchMasterData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_placements' }, () => fetchMasterData())
-      .subscribe();
+  // --- FETCHING LOGIC ---
+  const fetchDashboardData = useCallback(async () => {
+      // Light fetch for analytics (using selection to minimize data)
+      const { data: rawData } = await supabase
+        .from('applicants')
+        .select('created_at, tingkat_pendidikan, posisi_dilamar, jenis_kelamin');
+      
+      if (!rawData) return;
 
-    // 3. Cleanup
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      // 1. Trend (Last 7 Days)
+      const last7Days = Array.from({length: 7}, (_, i) => {
+          const d = new Date();
+          d.setDate(d.getDate() - (6 - i));
+          return d.toISOString().split('T')[0];
+      });
+      const trendCounts = last7Days.map(date => 
+          rawData.filter((r: any) => r.created_at.startsWith(date)).length
+      );
+
+      // 2. Education Distribution
+      const eduCounts = rawData.reduce((acc: any, curr: any) => {
+          acc[curr.tingkat_pendidikan] = (acc[curr.tingkat_pendidikan] || 0) + 1;
+          return acc;
+      }, {});
+      const eduData = [
+          { label: 'SMA/SMK', value: eduCounts['SMA/SMK'] || 0, color: '#3b82f6' },
+          { label: 'D3', value: eduCounts['D3'] || 0, color: '#8b5cf6' },
+          { label: 'S1', value: eduCounts['S1'] || 0, color: '#f59e0b' },
+          { label: 'Lainnya', value: (eduCounts['SD']||0)+(eduCounts['SMP']||0)+(eduCounts['S2']||0), color: '#94a3b8' }
+      ].filter(x => x.value > 0);
+
+      // 3. Top Positions
+      const posCounts = rawData.reduce((acc: any, curr: any) => {
+          const pos = curr.posisi_dilamar || 'Unspecified';
+          acc[pos] = (acc[pos] || 0) + 1;
+          return acc;
+      }, {});
+      const topPos = Object.entries(posCounts)
+          .map(([label, value]) => ({ label, value: value as number }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 5);
+
+      // 4. Gender
+      const male = rawData.filter((r: any) => r.jenis_kelamin === 'Laki-laki').length;
+      const female = rawData.filter((r: any) => r.jenis_kelamin === 'Perempuan').length;
+
+      setDashboardMetrics({
+          trend: trendCounts,
+          education: eduData,
+          positions: topPos,
+          gender: { male, female }
+      });
   }, []);
 
-  useEffect(() => {
-    setSelectedIds([]);
-  }, [activeTab, filterClient, filterEducation, searchTerm]);
-  
-  useEffect(() => {
-    if (selectedApplicant) {
-      setNoteInput(selectedApplicant.internal_notes || '');
-      // Reset tab to profile when opening new applicant
-      setActiveDetailTab('profile');
-      setIsEditing(false);
-    }
-  }, [selectedApplicant]);
+  const fetchApplicants = useCallback(async () => {
+    if (activeTab === 'dashboard') return; // Skip fetching list if on dashboard
 
-  const fetchApplicants = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase.from('applicants').select('*').order('created_at', { ascending: false });
+      let query = supabase.from('applicants').select('*', { count: 'exact' });
+
+      // Apply Tab Filters
+      if (activeTab === 'talent_pool') query = query.or('status.eq.new,status.is.null');
+      else if (activeTab === 'process') query = query.in('status', ['process', 'interview']);
+      else if (activeTab === 'rejected') query = query.eq('status', 'rejected');
+      else if (activeTab === 'hired') query = query.eq('status', 'hired');
+
+      // Apply Search & Dropdown Filters
+      if (searchTerm) {
+        query = query.or(`nama_lengkap.ilike.%${searchTerm}%,penempatan.ilike.%${searchTerm}%,nik.ilike.%${searchTerm}%`);
+      }
+      if (filterClient) {
+        query = query.ilike('penempatan', `%${filterClient}%`);
+      }
+      if (filterEducation) {
+        query = query.eq('tingkat_pendidikan', filterEducation);
+      }
+
+      // Apply Sorting
+      query = query.order('created_at', { ascending: sortOrder === 'oldest' });
+
+      // Apply Pagination
+      const from = (currentPage - 1) * ITEMS_PER_PAGE;
+      const to = from + ITEMS_PER_PAGE - 1;
+      query = query.range(from, to);
+
+      const { data, count, error } = await query;
+      
       if (error) throw error;
+      
       setApplicants(data || []);
-    } catch (err) { console.error(err); } 
+      if (count !== null) setTotalCount(count);
+
+    } catch (err: any) {
+      console.error('Error fetching applicants:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, currentPage, searchTerm, filterClient, filterEducation, sortOrder]);
+
+  const fetchStats = async () => {
+    const getCount = async (statusFilter: string) => {
+        let q = supabase.from('applicants').select('id', { count: 'exact', head: true });
+        if (statusFilter === 'new') q = q.or('status.eq.new,status.is.null');
+        else if (statusFilter === 'process') q = q.in('status', ['process', 'interview']);
+        else if (statusFilter === 'all') { /* no filter */ }
+        else q = q.eq('status', statusFilter);
+        const { count } = await q;
+        return count || 0;
+    };
+
+    const [total, newCount, process, hired, rejected] = await Promise.all([
+        getCount('all'), getCount('new'), getCount('process'), getCount('hired'), getCount('rejected')
+    ]);
+    setStats({ total, new: newCount, process, hired, rejected });
   };
 
   const fetchMasterData = async () => {
@@ -195,28 +381,74 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       if (place) setPlacements(place);
   };
 
+  // --- EFFECT HOOKS ---
+  
+  // Initial & Filter Change
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+        fetchStats();
+        fetchDashboardData();
+    } else if (activeTab === 'master_data') {
+        fetchMasterData();
+    } else {
+        fetchApplicants();
+        fetchStats();
+    }
+  }, [activeTab, fetchApplicants, fetchDashboardData]);
+
+  // Reset to Page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm, filterClient, filterEducation]);
+
+  // Clear selection when tab changes
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [activeTab, currentPage]);
+
+  // Update Note Input when selecting applicant
+  useEffect(() => {
+    if (selectedApplicant) {
+      setNoteInput(selectedApplicant.internal_notes || '');
+      setActiveDetailTab('profile');
+      setIsEditing(false);
+    }
+  }, [selectedApplicant]);
+
+  // Realtime Listener
+  useEffect(() => {
+    const channel = supabase.channel('realtime-dashboard')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'applicants' }, () => {
+         if (activeTab === 'dashboard') { fetchStats(); fetchDashboardData(); }
+         else { fetchApplicants(); fetchStats(); }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_clients' }, fetchMasterData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_positions' }, fetchMasterData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'job_placements' }, fetchMasterData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchApplicants, fetchDashboardData, activeTab]);
+
+
+  // --- ACTIONS ---
+
   const updateStatus = async (id: number, newStatus: string) => {
-    try {
-      const { error } = await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
-      if (error) throw error;
-      // State updated via Realtime
-    } catch (err) { alert('Gagal mengubah status'); }
+    await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
   };
 
   const handleSaveNote = async () => {
     if (!selectedApplicant) return;
     setSavingNote(true);
     try {
-        const { error } = await supabase.from('applicants').update({ internal_notes: noteInput }).eq('id', selectedApplicant.id);
-        if (error) throw error;
-        // State updated via Realtime
+        await supabase.from('applicants').update({ internal_notes: noteInput }).eq('id', selectedApplicant.id);
         alert("Catatan disimpan.");
     } catch (err) { alert("Gagal menyimpan."); } finally { setSavingNote(false); }
   };
 
-  const toggleSelectAll = (displayedIds: number[]) => {
-    if (selectedIds.length === displayedIds.length && displayedIds.length > 0) setSelectedIds([]); 
-    else setSelectedIds(displayedIds);
+  const toggleSelectAll = () => {
+    if (selectedIds.length === applicants.length && applicants.length > 0) setSelectedIds([]); 
+    else setSelectedIds(applicants.map(a => a.id));
   };
 
   const toggleSelection = (id: number) => {
@@ -225,35 +457,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (!window.confirm(`Update ${selectedIds.length} data?`)) return;
-    try {
-      const { error } = await supabase.from('applicants').update({ status: newStatus }).in('id', selectedIds);
-      if (error) throw error;
-      setSelectedIds([]);
-      // State updated via Realtime
-    } catch (err) { alert("Gagal update massal."); }
+    await supabase.from('applicants').update({ status: newStatus }).in('id', selectedIds);
+    setSelectedIds([]);
   };
 
   const handleBulkDelete = async () => {
     if (!window.confirm(`HAPUS ${selectedIds.length} DATA?`)) return;
-    try {
-      const { error } = await supabase.from('applicants').delete().in('id', selectedIds);
-      if (error) throw error;
-      setSelectedIds([]);
-      // State updated via Realtime
-    } catch (err) { alert("Gagal hapus massal."); }
+    await supabase.from('applicants').delete().in('id', selectedIds);
+    setSelectedIds([]);
   };
 
   const handleDelete = async (id: number) => {
     if (!window.confirm("Hapus permanen?")) return;
-    try {
-      await supabase.from('applicants').delete().eq('id', id);
-      // State updated via Realtime
-    } catch (err) { alert('Gagal hapus.'); }
+    await supabase.from('applicants').delete().eq('id', id);
   };
 
   const startEditing = () => { 
       if (selectedApplicant) { 
-          // Copy all data to edit form
           setEditFormData({ ...selectedApplicant }); 
           setIsEditing(true); 
       } 
@@ -265,12 +485,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       const { error } = await supabase.from('applicants').update(editFormData).eq('id', selectedApplicant.id);
       if (error) throw error;
       setIsEditing(false);
-      // State updated via Realtime
       alert("Data berhasil diperbarui!");
     } catch (err: any) { alert("Gagal update: " + err.message); }
   };
 
-  // --- EXCEL COPY ---
+  // --- EXCEL COPY & WA HANDLERS ---
   const openCopyModal = () => {
     if (!selectedApplicant) return;
     let shortPos = 'SO';
@@ -292,7 +511,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     navigator.clipboard.writeText(rowData).then(() => { alert("Disalin!"); setIsCopyModalOpen(false); });
   };
 
-  // --- WA HANDLER ---
   const handleOpenWa = (applicant: ApplicantDB) => {
     setWaTarget(applicant);
     setWaStep('selection');
@@ -307,7 +525,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleSendWaFinal = () => {
     if (!waTarget) return;
-    // Format nomor HP (Ganti 08/62/0 di depan dengan 62)
     const phone = waTarget.no_hp.replace(/\D/g, '').replace(/^0/, '62');
     const link = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(waDraft)}`;
     window.open(link, '_blank');
@@ -323,7 +540,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const toggleClient = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_clients').update({ is_active: !currentStatus }).eq('id', id);
   };
-  
   const handleDeleteClient = async (id: number) => {
     const confirmMsg = "⚠️ PERINGATAN KERAS!\n\nMenghapus Klien ini akan MENGHAPUS OTOMATIS semua Posisi dan Penempatan yang terhubung.\n\nApakah Anda yakin ingin melanjutkan?";
     if(!window.confirm(confirmMsg)) return;
@@ -335,22 +551,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
              await supabase.from('job_placements').delete().in('position_id', posIds);
              await supabase.from('job_positions').delete().in('id', posIds);
         }
-        const { error: errClient } = await supabase.from('job_clients').delete().eq('id', id);
-        if (errClient) throw new Error(errClient.message);
+        await supabase.from('job_clients').delete().eq('id', id);
         alert("Klien dan data terkait berhasil dihapus.");
-        // State update via realtime
     } catch (err: any) { alert("GAGAL MENGHAPUS: " + err.message); }
   };
 
   const handleAddPosition = async () => {
     if(!newPosition.name.trim() || !newPosition.client_id) return alert("Isi nama dan pilih klien");
-    const { error } = await supabase.from('job_positions').insert({ 
+    await supabase.from('job_positions').insert({ 
         name: newPosition.name, 
         value: newPosition.name.toUpperCase(),
         client_id: parseInt(newPosition.client_id),
         is_active: true
     });
-    if (!error) { setNewPosition({name: '', client_id: ''}); }
+    setNewPosition({name: '', client_id: ''});
   };
   const togglePosition = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_positions').update({ is_active: !currentStatus }).eq('id', id);
@@ -364,14 +578,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleAddPlacement = async () => {
      if(!newPlacement.label.trim() || !newPlacement.recruiter_phone.trim() || !placementPositionFilter) return alert("Pilih Klien, Posisi, dan lengkapi data");
-     const { error } = await supabase.from('job_placements').insert({
+     await supabase.from('job_placements').insert({
         label: newPlacement.label,
         value: newPlacement.label.replace(' - ', ' ').toUpperCase(),
         recruiter_phone: newPlacement.recruiter_phone,
         position_id: parseInt(placementPositionFilter),
         is_active: true
      });
-     if (!error) { setNewPlacement({label: '', recruiter_phone: ''}); }
+     setNewPlacement({label: '', recruiter_phone: ''});
   };
   const togglePlacement = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_placements').update({ is_active: !currentStatus }).eq('id', id);
@@ -382,34 +596,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
      if(error) alert("Gagal hapus: " + error.message);
   };
 
-  // --- FILTERS & HELPERS ---
-  const getFilteredApplicants = () => {
-    let filtered = applicants;
-    if (activeTab === 'talent_pool') filtered = filtered.filter(a => a.status === 'new' || !a.status);
-    else if (activeTab === 'process') filtered = filtered.filter(a => ['process', 'interview'].includes(a.status));
-    else if (activeTab === 'rejected') filtered = filtered.filter(a => a.status === 'rejected');
-    else if (activeTab === 'hired') filtered = filtered.filter(a => a.status === 'hired');
-
-    if (filterClient) filtered = filtered.filter(a => a.penempatan.includes(filterClient));
-    if (filterEducation) filtered = filtered.filter(a => a.tingkat_pendidikan === filterEducation);
-    if (searchTerm) {
-      const lowerTerm = searchTerm.toLowerCase();
-      filtered = filtered.filter(app => app.nama_lengkap.toLowerCase().includes(lowerTerm) || app.penempatan.toLowerCase().includes(lowerTerm));
-    }
-    return filtered.sort((a, b) => sortOrder === 'newest' ? new Date(b.created_at).getTime() - new Date(a.created_at).getTime() : new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-  };
-
-  const displayedApplicants = getFilteredApplicants();
+  // --- HELPERS ---
   const getFileUrl = (path: string) => path ? supabase.storage.from('documents').getPublicUrl(path).data.publicUrl : '#';
   
-  const stats = {
-    total: applicants.length,
-    new: applicants.filter(a => a.status === 'new' || !a.status).length,
-    process: applicants.filter(a => ['process', 'interview'].includes(a.status)).length,
-    hired: applicants.filter(a => a.status === 'hired').length,
-    rejected: applicants.filter(a => a.status === 'rejected').length
-  };
-
   const getPlacementDetails = (p: JobPlacement) => {
       const pos = positions.find(pos => pos.id === p.position_id);
       const cli = pos ? clients.find(c => c.id === pos.client_id) : null;
@@ -420,7 +609,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       // @ts-ignore
       const rawVal = isEditing ? (editFormData[field] ?? '') : (selectedApplicant ? selectedApplicant[field] : '-');
       const val = typeof rawVal === 'boolean' ? String(rawVal) : rawVal;
-      
       return (
         <div className="mb-4">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">{label}</label>
@@ -452,6 +640,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       );
   };
 
+  // Pagination Logic
+  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endItem = Math.min(startItem + ITEMS_PER_PAGE - 1, totalCount);
+
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
       <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col fixed h-full z-20">
@@ -460,15 +653,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           <span className="font-bold text-white">SWA ADMIN</span>
         </div>
         <nav className="flex-1 py-6 px-3 space-y-1">
-          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${activeTab === 'dashboard' ? 'bg-brand-600 text-white' : 'hover:bg-slate-800'}`}>
+          <button onClick={() => setActiveTab('dashboard')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all ${activeTab === 'dashboard' ? 'bg-gradient-to-r from-brand-600 to-blue-600 text-white shadow-lg' : 'hover:bg-slate-800'}`}>
             <LayoutDashboard size={18} /> Dashboard
           </button>
           <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase">Pipeline</div>
           {['talent_pool', 'process', 'hired', 'rejected'].map((tab) => (
-             <button key={tab} onClick={() => setActiveTab(tab as any)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg ${activeTab === tab ? 'bg-slate-800 text-white' : 'hover:bg-slate-800'}`}>
+             <button key={tab} onClick={() => setActiveTab(tab as any)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${activeTab === tab ? 'bg-slate-800 text-white shadow-md border-l-4 border-brand-500' : 'hover:bg-slate-800'}`}>
                 <div className="flex items-center gap-3 capitalize">{tab.replace('_', ' ')}</div>
                 {/* @ts-ignore */}
-                <span className="bg-slate-700 text-xs px-2 rounded-full">{stats[tab === 'talent_pool' ? 'new' : tab]}</span>
+                <span className="bg-slate-700 text-xs px-2 py-0.5 rounded-full min-w-[24px] text-center">{stats[tab === 'talent_pool' ? 'new' : tab]}</span>
              </button>
           ))}
            <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase">System</div>
@@ -476,14 +669,116 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <Settings size={18} /> Master Data
           </button>
         </nav>
-        <div className="p-4 border-t border-slate-800"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-red-400 py-2"><LogOut size={16} /> Keluar</button></div>
+        <div className="p-4 border-t border-slate-800"><button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-red-400 py-2 hover:bg-slate-800 rounded-lg"><LogOut size={16} /> Keluar</button></div>
       </aside>
 
       <main className="flex-1 ml-64 p-8">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6 capitalize">{activeTab.replace('_', ' ')}</h1>
+        
+        {/* HEADER */}
+        <div className="flex justify-between items-end mb-8">
+            <h1 className="text-2xl font-bold text-slate-900 capitalize tracking-tight flex items-center gap-2">
+                {activeTab === 'dashboard' ? <LayoutDashboard className="text-brand-600"/> : activeTab.replace('_', ' ')}
+                {activeTab === 'dashboard' && <span className="text-sm font-normal text-slate-500 ml-2 bg-slate-100 px-3 py-1 rounded-full">Statistik & Analisa</span>}
+            </h1>
+            {activeTab !== 'dashboard' && activeTab !== 'master_data' && (
+                <div className="text-sm text-gray-500">
+                    Total: <span className="font-bold text-slate-900">{totalCount}</span> Kandidat
+                </div>
+            )}
+        </div>
 
-        {activeTab === 'master_data' ? (
-           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {activeTab === 'dashboard' ? (
+            /* --- DASHBOARD ANALYTICS VIEW --- */
+            <div className="space-y-6 animate-fadeIn">
+                {/* 1. KPI CARDS */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-6 text-white shadow-lg shadow-blue-200 relative overflow-hidden">
+                        <div className="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4"><User size={100}/></div>
+                        <div className="text-blue-100 text-sm font-medium mb-1">Total Pelamar</div>
+                        <div className="text-4xl font-bold">{stats.total}</div>
+                        <div className="mt-4 text-xs bg-white/20 w-fit px-2 py-1 rounded">Semua Waktu</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-2xl p-6 text-white shadow-lg shadow-indigo-200 relative overflow-hidden">
+                        <div className="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4"><FileText size={100}/></div>
+                        <div className="text-indigo-100 text-sm font-medium mb-1">Baru Masuk</div>
+                        <div className="text-4xl font-bold">{stats.new}</div>
+                        <div className="mt-4 text-xs bg-white/20 w-fit px-2 py-1 rounded">Perlu Diproses</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-400 to-amber-500 rounded-2xl p-6 text-white shadow-lg shadow-amber-200 relative overflow-hidden">
+                        <div className="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4"><Loader2 size={100}/></div>
+                        <div className="text-amber-50 text-sm font-medium mb-1">Sedang Proses</div>
+                        <div className="text-4xl font-bold">{stats.process}</div>
+                        <div className="mt-4 text-xs bg-white/20 w-fit px-2 py-1 rounded">Interview & Psikotes</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-6 text-white shadow-lg shadow-emerald-200 relative overflow-hidden">
+                        <div className="absolute right-0 top-0 opacity-10 transform translate-x-4 -translate-y-4"><CheckCircle size={100}/></div>
+                        <div className="text-emerald-100 text-sm font-medium mb-1">Diterima</div>
+                        <div className="text-4xl font-bold">{stats.hired}</div>
+                        <div className="mt-4 text-xs bg-white/20 w-fit px-2 py-1 rounded">Karyawan Baru</div>
+                    </div>
+                </div>
+
+                {/* 2. CHARTS ROW 1 */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* TREND CHART */}
+                    <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <TrendingUp className="text-brand-600" size={20}/> Tren Pendaftaran (7 Hari Terakhir)
+                        </h3>
+                        <SimpleLineChart data={dashboardMetrics.trend} />
+                        <div className="flex justify-between mt-4 text-xs text-gray-400 px-2">
+                            <span>7 Hari Lalu</span>
+                            <span>Hari Ini</span>
+                        </div>
+                    </div>
+
+                    {/* EDUCATION CHART */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <PieChart className="text-purple-600" size={20}/> Kualifikasi Pendidikan
+                        </h3>
+                        <SimpleDonutChart data={dashboardMetrics.education} />
+                    </div>
+                </div>
+
+                {/* 3. CHARTS ROW 2 */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* TOP POSITIONS */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <BarChart3 className="text-indigo-600" size={20}/> 5 Posisi Terpopuler
+                        </h3>
+                        <SimpleBarChart data={dashboardMetrics.positions} />
+                    </div>
+
+                    {/* DEMOGRAPHICS */}
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                        <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2">
+                            <Users className="text-pink-600" size={20}/> Demografi Gender
+                        </h3>
+                        <div className="flex items-center justify-center gap-8 h-40">
+                            <div className="text-center">
+                                <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 mx-auto mb-2">
+                                    <User size={32}/>
+                                </div>
+                                <div className="text-2xl font-bold text-slate-800">{dashboardMetrics.gender.male}</div>
+                                <div className="text-xs text-gray-500">Laki-laki</div>
+                            </div>
+                            <div className="h-12 w-px bg-gray-200"></div>
+                            <div className="text-center">
+                                <div className="w-16 h-16 bg-pink-50 rounded-full flex items-center justify-center text-pink-600 mx-auto mb-2">
+                                    <User size={32}/>
+                                </div>
+                                <div className="text-2xl font-bold text-slate-800">{dashboardMetrics.gender.female}</div>
+                                <div className="text-xs text-gray-500">Perempuan</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        ) : activeTab === 'master_data' ? (
+           /* --- MASTER DATA (SAME AS BEFORE) --- */
+           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
               <div className="border-b border-gray-200 flex bg-gray-50">
                  {['clients', 'positions', 'placements'].map(tab => (
                     <button key={tab} onClick={() => setMasterTab(tab as any)} className={`px-6 py-3 text-sm font-bold uppercase ${masterTab === tab ? 'bg-white border-t-2 border-brand-600 text-brand-600' : 'text-gray-500'}`}>
@@ -493,7 +788,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               </div>
               
               <div className="p-6">
-                 {/* CLIENTS TAB */}
                  {masterTab === 'clients' && (
                     <div className="max-w-xl">
                        <h3 className="font-bold mb-4 flex items-center gap-2"><Building2 size={18}/> Daftar Klien Mitra</h3>
@@ -522,7 +816,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                  )}
 
-                 {/* POSITIONS TAB */}
                  {masterTab === 'positions' && (
                     <div className="max-w-2xl">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><Briefcase size={18}/> Daftar Posisi</h3>
@@ -559,7 +852,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                  )}
 
-                 {/* PLACEMENTS TAB */}
                  {masterTab === 'placements' && (
                     <div className="max-w-5xl">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><MapPin size={18}/> Daftar Penempatan</h3>
@@ -630,28 +922,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               </div>
            </div>
         ) : (
-          /* STANDARD DASHBOARD TABS */
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="text-slate-500 text-sm mb-1">Total Pelamar</div>
-                <div className="text-3xl font-bold text-slate-800">{stats.total}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="text-brand-600 text-sm mb-1 font-semibold">Baru Masuk</div>
-                <div className="text-3xl font-bold text-brand-600">{stats.new}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="text-amber-500 text-sm mb-1 font-semibold">Sedang Proses</div>
-                <div className="text-3xl font-bold text-amber-500">{stats.process}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div className="text-green-600 text-sm mb-1 font-semibold">Diterima</div>
-                <div className="text-3xl font-bold text-green-600">{stats.hired}</div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          /* --- OPERATIONAL TABLE VIEW (TALENT POOL, PROCESS, ETC) --- */
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden animate-fadeIn">
               <div className="p-4 border-b border-slate-200 flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-50">
                 <div className="flex items-center gap-2 w-full md:w-auto">
                    <div className="relative">
@@ -694,81 +966,125 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
-                    <tr>
-                      <th className="p-4 w-10"><button onClick={() => toggleSelectAll(displayedApplicants.map(a => a.id))}><CheckSquare size={16} className={selectedIds.length > 0 ? "text-brand-600" : "text-gray-400"} /></button></th>
-                      <th className="p-4">Tanggal</th>
-                      <th className="p-4">Kandidat</th>
-                      <th className="p-4">Posisi & Klien</th>
-                      <th className="p-4">Kontak</th>
-                      <th className="p-4">Status</th>
-                      <th className="p-4 text-right">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {displayedApplicants.map((app) => (
-                      <tr key={app.id} className={`hover:bg-slate-50 transition-colors ${selectedIds.includes(app.id) ? 'bg-brand-50' : ''}`}>
-                        <td className="p-4">
-                           <button onClick={() => toggleSelection(app.id)}>
-                              {selectedIds.includes(app.id) ? <CheckSquare size={18} className="text-brand-600"/> : <Square size={18} className="text-gray-300"/>}
-                           </button>
-                        </td>
-                        <td className="p-4 text-sm text-slate-500">
-                          {new Date(app.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                          <div className="text-xs text-slate-400">{new Date(app.created_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="font-bold text-slate-900">{app.nama_lengkap}</div>
-                          <div className="text-xs text-slate-500 flex items-center gap-1">
-                            {app.jenis_kelamin === 'Laki-laki' ? 'L' : 'P'} • {app.umur} Th • {app.tingkat_pendidikan}
-                          </div>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm font-semibold text-brand-700">{app.posisi_dilamar}</div>
-                          <div className="text-xs text-slate-500">{app.penempatan}</div>
-                        </td>
-                        <td className="p-4">
-                          <div className="text-sm text-slate-700">{app.no_hp}</div>
-                          <div className="text-xs text-slate-400">{app.kota}</div>
-                        </td>
-                        <td className="p-4">
-                           <select 
-                              value={app.status || 'new'} 
-                              onChange={(e) => updateStatus(app.id, e.target.value)}
-                              className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer outline-none
-                                ${app.status === 'hired' ? 'bg-green-100 text-green-700' : 
-                                  app.status === 'rejected' ? 'bg-red-100 text-red-700' :
-                                  ['process', 'interview'].includes(app.status) ? 'bg-amber-100 text-amber-700' :
-                                  'bg-blue-50 text-blue-600'}
-                              `}
-                           >
-                              <option value="new">Baru</option>
-                              <option value="process">Proses</option>
-                              <option value="interview">Interview</option>
-                              <option value="hired">Diterima</option>
-                              <option value="rejected">Ditolak</option>
-                           </select>
-                           {app.internal_notes && <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-600"><StickyNote size={10}/> Ada Catatan</div>}
-                        </td>
-                        <td className="p-4 text-right">
-                           <div className="flex items-center justify-end gap-2">
-                              <button onClick={() => handleOpenWa(app)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" title="WhatsApp"><MessageCircle size={18} /></button>
-                              <button onClick={() => setSelectedApplicant(app)} className="p-2 text-brand-600 hover:bg-brand-50 rounded-lg" title="Detail"><FileText size={18} /></button>
-                              <button onClick={() => handleDelete(app.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-lg" title="Hapus"><Trash2 size={18} /></button>
-                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {displayedApplicants.length === 0 && (
-                      <tr><td colSpan={7} className="p-8 text-center text-slate-400">Tidak ada data ditemukan.</td></tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="overflow-x-auto min-h-[400px]">
+                {loading ? (
+                    <div className="flex items-center justify-center h-64 text-slate-400 gap-2">
+                        <Loader2 className="animate-spin" size={24}/> Memuat data...
+                    </div>
+                ) : (
+                    <table className="w-full text-left">
+                    <thead className="bg-slate-900 text-slate-200 text-xs uppercase font-semibold">
+                        <tr>
+                        <th className="p-4 w-10"><button onClick={toggleSelectAll}><CheckSquare size={16} className={selectedIds.length > 0 ? "text-brand-400" : "text-slate-500"} /></button></th>
+                        <th className="p-4">Tanggal</th>
+                        <th className="p-4">Kandidat</th>
+                        <th className="p-4">Posisi & Klien</th>
+                        <th className="p-4">Kontak</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4 text-right">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                        {applicants.map((app) => {
+                            // Row Coloring Logic
+                            let rowClass = "bg-white border-l-4 border-l-transparent hover:border-l-slate-300"; // Default (New)
+                            
+                            if (selectedIds.includes(app.id)) {
+                                rowClass = "bg-blue-50/80 border-l-4 border-l-blue-500";
+                            } else if (app.status === 'hired') {
+                                rowClass = "bg-emerald-50/60 border-l-4 border-l-emerald-500 hover:bg-emerald-100/50";
+                            } else if (app.status === 'rejected') {
+                                rowClass = "bg-rose-50/60 border-l-4 border-l-rose-500 hover:bg-rose-100/50";
+                            } else if (['process', 'interview'].includes(app.status)) {
+                                rowClass = "bg-amber-50/60 border-l-4 border-l-amber-500 hover:bg-amber-100/50";
+                            }
+
+                            return (
+                                <tr key={app.id} className={`transition-all hover:shadow-sm ${rowClass}`}>
+                                    <td className="p-4">
+                                    <button onClick={() => toggleSelection(app.id)}>
+                                        {selectedIds.includes(app.id) ? <CheckSquare size={18} className="text-brand-600"/> : <Square size={18} className="text-gray-300"/>}
+                                    </button>
+                                    </td>
+                                    <td className="p-4 text-sm text-slate-500">
+                                    {new Date(app.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                    <div className="text-xs text-slate-400">{new Date(app.created_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</div>
+                                    </td>
+                                    <td className="p-4">
+                                    <div className="font-bold text-slate-900">{app.nama_lengkap}</div>
+                                    <div className="text-xs text-slate-500 flex items-center gap-1">
+                                        {app.jenis_kelamin === 'Laki-laki' ? 'L' : 'P'} • {app.umur} Th • {app.tingkat_pendidikan}
+                                    </div>
+                                    </td>
+                                    <td className="p-4">
+                                    <div className="text-sm font-semibold text-brand-700">{app.posisi_dilamar}</div>
+                                    <div className="text-xs text-slate-500">{app.penempatan}</div>
+                                    </td>
+                                    <td className="p-4">
+                                    <div className="text-sm text-slate-700">{app.no_hp}</div>
+                                    <div className="text-xs text-slate-400">{app.kota}</div>
+                                    </td>
+                                    <td className="p-4">
+                                    <select 
+                                        value={app.status || 'new'} 
+                                        onChange={(e) => updateStatus(app.id, e.target.value)}
+                                        className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer outline-none bg-white/50 backdrop-blur-sm shadow-sm
+                                            ${app.status === 'hired' ? 'text-green-700 ring-1 ring-green-200' : 
+                                            app.status === 'rejected' ? 'text-red-700 ring-1 ring-red-200' :
+                                            ['process', 'interview'].includes(app.status) ? 'text-amber-700 ring-1 ring-amber-200' :
+                                            'text-blue-600 ring-1 ring-blue-200'}
+                                        `}
+                                    >
+                                        <option value="new">Baru</option>
+                                        <option value="process">Proses</option>
+                                        <option value="interview">Interview</option>
+                                        <option value="hired">Diterima</option>
+                                        <option value="rejected">Ditolak</option>
+                                    </select>
+                                    {app.internal_notes && <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-600"><StickyNote size={10}/> Ada Catatan</div>}
+                                    </td>
+                                    <td className="p-4 text-right">
+                                    <div className="flex items-center justify-end gap-2">
+                                        <button onClick={() => handleOpenWa(app)} className="p-2 text-green-600 hover:bg-green-100 rounded-lg bg-white/80 shadow-sm" title="WhatsApp"><MessageCircle size={18} /></button>
+                                        <button onClick={() => setSelectedApplicant(app)} className="p-2 text-brand-600 hover:bg-brand-100 rounded-lg bg-white/80 shadow-sm" title="Detail"><FileText size={18} /></button>
+                                        <button onClick={() => handleDelete(app.id)} className="p-2 text-red-400 hover:bg-red-100 rounded-lg bg-white/80 shadow-sm" title="Hapus"><Trash2 size={18} /></button>
+                                    </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                        {applicants.length === 0 && !loading && (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-400">Tidak ada data ditemukan.</td></tr>
+                        )}
+                    </tbody>
+                    </table>
+                )}
+              </div>
+
+              {/* PAGINATION CONTROLS */}
+              <div className="bg-gray-50 p-4 border-t border-gray-200 flex items-center justify-between">
+                 <div className="text-sm text-gray-500">
+                    Menampilkan <span className="font-bold">{totalCount > 0 ? startItem : 0}-{endItem}</span> dari <span className="font-bold">{totalCount}</span> data
+                 </div>
+                 <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1 || loading}
+                        className="p-2 rounded border bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <ChevronLeft size={16}/>
+                    </button>
+                    <span className="text-sm font-semibold px-2">Halaman {currentPage} / {Math.max(totalPages, 1)}</span>
+                    <button 
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage >= totalPages || loading}
+                        className="p-2 rounded border bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <ChevronRight size={16}/>
+                    </button>
+                 </div>
               </div>
             </div>
-          </>
         )}
       </main>
 
@@ -830,7 +1146,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {selectedApplicant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
-            
             {/* HEADER MODAL */}
             <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
                <div>
@@ -880,8 +1195,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
             {/* TAB CONTENT */}
             <div className="flex-1 overflow-y-auto p-8 bg-white">
-                
-                {/* 1. PROFILE TAB */}
                 {activeDetailTab === 'profile' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
                         <div>
@@ -919,10 +1232,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* 2. QUALIFICATION TAB */}
                 {activeDetailTab === 'qualification' && (
                     <div className="space-y-8 animate-fadeIn">
-                        {/* PENDIDIKAN */}
                         <div>
                             <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><GraduationCap size={16}/> Pendidikan</h3>
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -934,8 +1245,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 {renderEditField("Tahun Lulus", "tahun_lulus")}
                             </div>
                         </div>
-
-                        {/* PENGALAMAN */}
                         <div>
                             <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><Briefcase size={16}/> Pengalaman Kerja</h3>
                             {selectedApplicant.has_pengalaman_kerja || isEditing ? (
@@ -957,8 +1266,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 <div className="text-gray-500 italic p-4 bg-gray-50 rounded">Fresh Graduate / Belum ada pengalaman relevan.</div>
                             )}
                         </div>
-
-                        {/* ASET */}
                         <div>
                             <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><CheckCircle size={16}/> Checklist Aset</h3>
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
@@ -974,10 +1281,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </div>
                 )}
 
-                {/* 3. DOCUMENTS TAB */}
                 {activeDetailTab === 'documents' && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
-                        {/* LEFT COLUMN */}
                         <div className="space-y-6">
                             <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
                                 <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><FileText size={18}/> Berkas Lamaran</h4>
@@ -994,15 +1299,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     </a>
                                 </div>
                             </div>
-
-                             {/* ALASAN MELAMAR */}
                             <div>
                                 <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Motivasi / Alasan Melamar</h3>
                                 {renderEditField("", "alasan_melamar")}
                             </div>
                         </div>
-
-                        {/* RIGHT COLUMN */}
                         <div>
                             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 h-full">
                                 <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><StickyNote size={16}/> Catatan Internal HRD</h4>
