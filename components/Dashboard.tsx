@@ -58,11 +58,9 @@ const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: 
     return (
         <div className="h-40 w-full relative">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-                {/* Grid Lines */}
                 <line x1="0" y1="25" x2="100" y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
                 <line x1="0" y1="50" x2="100" y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
                 <line x1="0" y1="75" x2="100" y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
-                {/* The Line */}
                 <polyline
                     fill="none"
                     stroke={color}
@@ -72,13 +70,11 @@ const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: 
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                 />
-                {/* Area under line (optional, for gradient effect) */}
                 <polygon 
                     fill={color} 
                     fillOpacity="0.1" 
                     points={`0,100 ${points} 100,100`} 
                 />
-                {/* Dots */}
                 {data.map((val, i) => {
                      const x = (i / (data.length - 1)) * 100;
                      const y = 100 - (val / max) * 100;
@@ -249,8 +245,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
   
-  const [noteLogs, setNoteLogs] = useState<LogEntry[]>([]);
-
   // WA Modal State
   const [waTarget, setWaTarget] = useState<ApplicantDB | null>(null);
   const [waStep, setWaStep] = useState<'selection' | 'editing'>('selection');
@@ -441,30 +435,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     setSelectedIds([]);
   }, [activeTab, currentPage]);
 
-  // Update Note Logs when selecting applicant
+  // Update selection view when opening
   useEffect(() => {
     if (selectedApplicant) {
-      // Parse Logs from string or JSON
-      try {
-          if (selectedApplicant.internal_notes && selectedApplicant.internal_notes.startsWith('[')) {
-              setNoteLogs(JSON.parse(selectedApplicant.internal_notes));
-          } else if (selectedApplicant.internal_notes) {
-              // Migration for old plain text notes
-              setNoteLogs([{ date: new Date().toISOString(), admin: 'System', text: selectedApplicant.internal_notes }]);
-          } else {
-              setNoteLogs([]);
-          }
-      } catch (e) {
-          setNoteLogs([]);
-      }
-      
-      // Default open tab based on context
       if (activeTab === 'interview_schedule') {
           setActiveDetailTab('roadmap');
       } else {
-          setActiveDetailTab('roadmap');
+          setActiveDetailTab('profile');
       }
-      
       setIsEditing(false);
     }
   }, [selectedApplicant, activeTab]);
@@ -504,13 +482,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       };
       
       const updatedLogs = [newLog, ...currentLogs];
-      
       await supabase.from('applicants').update({ internal_notes: JSON.stringify(updatedLogs) }).eq('id', applicantId);
-      
-      // If currently viewing this applicant, update UI immediately
-      if(selectedApplicant && selectedApplicant.id === applicantId) {
-          setNoteLogs(updatedLogs);
-      }
   };
 
   const toggleSelectAll = () => {
@@ -824,7 +796,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                  {masterTab === 'positions' && (
                     <div className="max-w-2xl">
                         <h3 className="font-bold mb-4 flex items-center gap-2"><Briefcase size={18}/> Daftar Posisi</h3>
-                        <div className="flex gap-4 mb-6"><select className="border p-2 rounded" value={newPosition.client_id} onChange={e => setNewPosition({...newPosition, client_id: e.target.value})}><option value="">-- Pilih Klien --</option>{clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><input className="flex-1 border p-2 rounded" placeholder="Nama Posisi (ex: SALES)" value={newPosition.name} onChange={e => setNewPosition({...newPosition, name: e.target.value})} /><button onClick={handleAddPosition} className="bg-brand-600 text-white px-4 py-2 rounded">Tambah</button></div>
+                        <div className="flex gap-4 mb-6"><select className="border p-2 rounded" value={newPosition.client_id} onChange={e => setNewPosition({...newPosition, client_id: e.target.value})}><option value="">-- Pilih Klien --</option>{clients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select><input className="flex-1 border p-2 rounded" placeholder="Nama Posisi (ex: SALES)" value={newPosition.name} onChange={e => setNewPosition({...newPosition, name: e.target.value})} /><button onClick={handleAddPosition} className="bg-brand-600 text-white px-4 py-2 rounded">Tambah</button></div>
                         <table className="w-full text-sm border"><thead className="bg-gray-100"><tr><th className="p-3 text-left">Klien</th><th className="p-3 text-left">Posisi</th><th className="p-3 text-center">Status</th><th className="p-3 text-right">Aksi</th></tr></thead><tbody>{positions.map(p => { const clientName = clients.find(c => c.id === p.client_id)?.name || '-'; return (<tr key={p.id} className={`border-t ${!p.is_active ? 'bg-gray-50 opacity-60' : ''}`}><td className="p-3 text-gray-500">{clientName}</td><td className="p-3 font-bold">{p.name}</td><td className="p-3 text-center"><button onClick={() => togglePosition(p.id, p.is_active)} className={`p-1.5 rounded-full ${p.is_active ? 'text-emerald-600' : 'text-slate-400'}`}>{p.is_active ? <Eye size={18} /> : <EyeOff size={18} />}</button></td><td className="p-3 text-right"><button onClick={() => handleDeletePosition(p.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={18}/></button></td></tr>); })}</tbody></table>
                     </div>
                  )}
@@ -1040,22 +1012,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
             {/* PROFILE INFO AREA (Overlapping) */}
             <div className="px-6 -mt-16 pb-6 relative z-10 shrink-0">
-                <div className="text-Black drop-shadow-md mb-8 pt-6">
+                <div className="text-slate-900 drop-shadow-sm mb-8 pt-6">
                     <h2 className="text-3xl font-bold tracking-tight leading-tight">{selectedApplicant.nama_lengkap}</h2>
                     <div className="flex items-center gap-2 mt-2">
-                        <Briefcase size={16} className="text-brand-200"/>
-                        <span className="font-semibold text-lg">{selectedApplicant.posisi_dilamar}</span>
+                        <Briefcase size={16} className="text-brand-500"/>
+                        <span className="font-semibold text-lg text-brand-600">{selectedApplicant.posisi_dilamar}</span>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex justify-start items-center gap-16">
+                <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex justify-start items-center gap-6">
                     <div>
                         <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Status Kandidat</p>
                         <span className={`px-3 py-1 rounded-full text-xs font-bold border ${selectedApplicant.status === 'hired' ? 'bg-green-100 text-green-700 border-green-200' : selectedApplicant.status === 'rejected' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-blue-50 text-blue-600 border-blue-100'}`}>
                             {selectedApplicant.status ? selectedApplicant.status.toUpperCase() : 'BARU'}
                         </span>
                     </div>
-                    <div className="text-left border-l border-slate-100 pl-8">
+                    <div className="h-10 w-px bg-slate-100"></div>
+                    <div className="text-left">
                         <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">NIK</p>
                         <p className="font-mono text-sm font-bold text-slate-700">{selectedApplicant.nik}</p>
                     </div>
