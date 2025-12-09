@@ -14,7 +14,6 @@ import {
   MessageCircle,
   Trash2,
   Edit,
-  Save,
   Plus,
   Copy,
   CheckSquare,
@@ -39,20 +38,11 @@ import {
   BarChart3,
   Users,
   Calendar,
-  Clock,
-  Video,
-  History,
-  MoreVertical,
-  Check,
-  Pencil,
   Milestone,
-  Flag,
-  Award,
   CreditCard,
   Home
 } from 'lucide-react';
 
-const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
 const ITEMS_PER_PAGE = 20;
 
 // --- SIMPLE CHART COMPONENTS (SVG/CSS) ---
@@ -203,29 +193,29 @@ interface DashboardProps {
 }
 
 type TabType = 'dashboard' | 'talent_pool' | 'process' | 'interview_schedule' | 'rejected' | 'hired' | 'master_data';
-type DetailTab = 'roadmap' | 'profile' | 'qualification' | 'documents'; // ADDED 'roadmap'
+type DetailTab = 'roadmap' | 'profile' | 'qualification' | 'documents';
 
 interface InterviewEvent {
     id: number;
     applicant_id: number;
     applicant_name: string;
-    position: string; // Editable
-    client_name: string; // Editable
+    position: string; 
+    client_name: string; 
     branch_name: string;
     date: string; 
     time: string; 
     type: 'Online' | 'Offline';
     location: string;
     interviewer?: string; 
-    status?: 'Scheduled' | 'Passed' | 'Failed' | 'Rescheduled' | 'No Show'; // New
-    result_note?: string; // New
+    status?: 'Scheduled' | 'Passed' | 'Failed' | 'Rescheduled' | 'No Show'; 
+    result_note?: string; 
 }
 
 interface LogEntry {
     date: string;
     admin: string;
     text: string;
-    type?: 'note' | 'interview' | 'status'; // To differentiate in UI
+    type?: 'note' | 'interview' | 'status';
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
@@ -260,16 +250,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
   
   const [noteLogs, setNoteLogs] = useState<LogEntry[]>([]);
-  const [noteInput, setNoteInput] = useState('');
-  const [savingNote, setSavingNote] = useState(false);
-
-  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
-  const [copyFormData, setCopyFormData] = useState({
-    pic: 'SUNAN',
-    sentra: '',
-    cabang: '',
-    posisi: ''
-  });
 
   // WA Modal State
   const [waTarget, setWaTarget] = useState<ApplicantDB | null>(null);
@@ -309,7 +289,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   // --- FETCHING LOGIC ---
   const fetchDashboardData = useCallback(async () => {
-      // Light fetch for analytics (using selection to minimize data)
+      // Light fetch for analytics
       const { data: rawData } = await supabase
         .from('applicants')
         .select('created_at, tingkat_pendidikan, posisi_dilamar, jenis_kelamin');
@@ -373,7 +353,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       else if (activeTab === 'process') query = query.in('status', ['process', 'interview']);
       else if (activeTab === 'rejected') query = query.eq('status', 'rejected');
       else if (activeTab === 'hired') query = query.eq('status', 'hired');
-      else if (activeTab === 'interview_schedule') query = query.eq('status', 'interview'); // For schedule tab, only show interview status
+      else if (activeTab === 'interview_schedule') query = query.eq('status', 'interview'); 
 
       // Apply Search & Dropdown Filters
       if (searchTerm) {
@@ -477,13 +457,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       } catch (e) {
           setNoteLogs([]);
       }
-      setNoteInput('');
       
       // Default open tab based on context
       if (activeTab === 'interview_schedule') {
           setActiveDetailTab('roadmap');
       } else {
-          setActiveDetailTab('roadmap'); // Default to roadmap for quick view
+          setActiveDetailTab('roadmap');
       }
       
       setIsEditing(false);
@@ -534,23 +513,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       }
   };
 
-  const handleAddNote = async () => {
-    if (!selectedApplicant || !noteInput.trim()) return;
-    setSavingNote(true);
-    await addLogToApplicant(selectedApplicant.id, noteInput);
-    setNoteInput('');
-    setSavingNote(false);
-  };
-
-  const handleDeleteLog = async (index: number) => {
-      if(!window.confirm("Hapus catatan ini?")) return;
-      if (!selectedApplicant) return;
-
-      const updatedLogs = noteLogs.filter((_, i) => i !== index);
-      setNoteLogs(updatedLogs); // Optimistic update
-      await supabase.from('applicants').update({ internal_notes: JSON.stringify(updatedLogs) }).eq('id', selectedApplicant.id);
-  };
-
   const toggleSelectAll = () => {
     if (selectedIds.length === applicants.length && applicants.length > 0) setSelectedIds([]); 
     else setSelectedIds(applicants.map(a => a.id));
@@ -584,16 +546,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       } 
   };
   
-  const saveChanges = async () => {
-    if (!selectedApplicant) return;
-    try {
-      const { error } = await supabase.from('applicants').update(editFormData).eq('id', selectedApplicant.id);
-      if (error) throw error;
-      setIsEditing(false);
-      alert("Data berhasil diperbarui!");
-    } catch (err: any) { alert("Gagal update: " + err.message); }
-  };
-
   // --- INTERVIEW LOGIC ---
   const handleOpenSchedule = (applicant: ApplicantDB, preFill?: Partial<InterviewEvent>) => {
       setEditingEventId(null);
@@ -628,13 +580,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           position: event.position
       });
       setScheduleModalOpen(true);
-  };
-
-  const handleDeleteInterview = async (event: InterviewEvent) => {
-      if (!confirm(`Batalkan jadwal interview untuk ${event.applicant_name}?`)) return;
-
-      setInterviewEvents(prev => prev.filter(e => e.id !== event.id));
-      await addLogToApplicant(event.applicant_id, `[JADWAL DIBATALKAN] Sesi pada ${event.date} telah dihapus.`, 'interview');
   };
 
   const handleSaveSchedule = async () => {
@@ -690,9 +635,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleOpenResult = (event: InterviewEvent) => {
       setSelectedInterview(event);
-      // Find applicant to update logs later
-      // In real app, we fetch applicant by event.applicant_id
-      // For now, we simulate finding from our local applicants list if possible, or just log
       setResultModalOpen(true);
   };
 
@@ -730,9 +672,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       }
   };
 
-  // ... (Other handlers like Copy, WA, Master Data remain same)
-  const openCopyModal = () => { if (!selectedApplicant) return; let shortPos = 'SO'; const appliedPos = selectedApplicant.posisi_dilamar.toUpperCase(); if (appliedPos.includes('KOLEKTOR') || appliedPos.includes('REMEDIAL')) shortPos = 'COLLECTION'; else if (appliedPos.includes('RELATION')) shortPos = 'RO'; setCopyFormData({ pic: 'SUNAN', sentra: '', cabang: '', posisi: shortPos }); setIsCopyModalOpen(true); };
-  const executeCopy = () => { if (!selectedApplicant) return; const rowData = [ new Date().toLocaleDateString('id-ID'), copyFormData.pic, copyFormData.sentra, "'" + selectedApplicant.nik, copyFormData.cabang, selectedApplicant.nama_lengkap, copyFormData.posisi, "'" + selectedApplicant.no_hp ].join('\t'); navigator.clipboard.writeText(rowData).then(() => { alert("Disalin!"); setIsCopyModalOpen(false); }); };
   const handleOpenWa = (applicant: ApplicantDB) => { setWaTarget(applicant); setWaStep('selection'); };
   const handleSelectTemplate = (template: typeof WA_TEMPLATES[0]) => { if (!waTarget) return; const msg = template.getMessage(waTarget.nama_lengkap, waTarget.posisi_dilamar); setWaDraft(msg); setWaStep('editing'); };
   const handleSendWaFinal = () => { if (!waTarget) return; const phone = waTarget.no_hp.replace(/\D/g, '').replace(/^0/, '62'); const link = `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(waDraft)}`; window.open(link, '_blank'); setWaTarget(null); };
@@ -747,6 +686,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const handleDeletePlacement = async (id: number) => { if(!window.confirm("Yakin ingin menghapus Penempatan ini?")) return; const { error } = await supabase.from('job_placements').delete().eq('id', id); if(error) alert("Gagal hapus: " + error.message); };
   const getFileUrl = (path: string) => path ? supabase.storage.from('documents').getPublicUrl(path).data.publicUrl : '#';
   const getPlacementDetails = (p: JobPlacement) => { const pos = positions.find(pos => pos.id === p.position_id); const cli = pos ? clients.find(c => c.id === pos.client_id) : null; return { positionName: pos ? pos.name : 'Unknown Pos', clientName: cli ? cli.name : 'Unknown Client' }; };
+  
   const renderEditField = (label: string, field: keyof ApplicantDB, type = 'text', options?: string[]) => {
       // @ts-ignore
       const rawVal = isEditing ? (editFormData[field] ?? '') : (selectedApplicant ? selectedApplicant[field] : '-'); const val = typeof rawVal === 'boolean' ? String(rawVal) : rawVal;
@@ -766,16 +706,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
             <LayoutDashboard size={18} /> Dashboard
           </button>
           <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase">Pipeline</div>
-          {['talent_pool', 'process', 'interview_schedule', 'hired', 'rejected'].map((tab) => (
+          {['talent_pool', 'process', 'interview_schedule', 'hired', 'rejected'].map((tab) => {
+             const statKey = tab === 'talent_pool' ? 'new' : tab === 'interview_schedule' ? 'interview' : tab;
+             return (
              <button key={tab} onClick={() => setActiveTab(tab as any)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${activeTab === tab ? 'bg-slate-800 text-white shadow-md border-l-4 border-brand-500' : 'hover:bg-slate-800'}`}>
                 <div className="flex items-center gap-3 capitalize">
                     {tab === 'interview_schedule' ? <><Calendar size={18}/> Jadwal Interview</> : tab.replace('_', ' ')}
                 </div>
                 {tab !== 'interview_schedule' && (
-                    <span className="bg-slate-700 text-xs px-2 py-0.5 rounded-full min-w-[24px] text-center">{stats[tab === 'talent_pool' ? 'new' : tab] || 0}</span>
+                    <span className="bg-slate-700 text-xs px-2 py-0.5 rounded-full min-w-[24px] text-center">{stats[statKey as keyof typeof stats] || 0}</span>
                 )}
              </button>
-          ))}
+             )
+          })}
            <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase">System</div>
             <button onClick={() => setActiveTab('master_data')} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg ${activeTab === 'master_data' ? 'bg-slate-700 text-white' : 'hover:bg-slate-800'}`}>
             <Settings size={18} /> Master Data
@@ -1086,7 +1029,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
                 {/* Header Actions */}
                 <div className="absolute top-4 right-4 flex gap-2 z-20">
-                    <button onClick={openCopyModal} className="p-2 bg-white/20 hover:bg-white text-white hover:text-brand-600 rounded-lg backdrop-blur-sm transition-all shadow-sm" title="Salin Data"><Copy size={16}/></button>
+                    <button onClick={() => {
+                        const rowData = [ new Date().toLocaleDateString('id-ID'), 'SUNAN', selectedApplicant.penempatan, "'" + selectedApplicant.nik, selectedApplicant.penempatan, selectedApplicant.nama_lengkap, selectedApplicant.posisi_dilamar, "'" + selectedApplicant.no_hp ].join('\t'); 
+                        navigator.clipboard.writeText(rowData).then(() => alert("Data disalin!"));
+                    }} className="p-2 bg-white/20 hover:bg-white text-white hover:text-brand-600 rounded-lg backdrop-blur-sm transition-all shadow-sm" title="Salin Data"><Copy size={16}/></button>
                     <button onClick={startEditing} className="p-2 bg-white/20 hover:bg-white text-white hover:text-brand-600 rounded-lg backdrop-blur-sm transition-all shadow-sm" title="Edit Data"><Edit size={16}/></button>
                     <button onClick={() => setSelectedApplicant(null)} className="p-2 bg-white/20 hover:bg-red-500 text-white hover:text-white rounded-lg backdrop-blur-sm transition-all shadow-sm"><X size={16} /></button>
                 </div>
