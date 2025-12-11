@@ -37,18 +37,11 @@ import {
   BarChart3,
   Users,
   History,
-  ThumbsUp,
-  ThumbsDown,
   MoreVertical,
   AlertCircle,
   Edit3,
-  Clock,
-  Circle,
   Pencil,
   Calendar,
-  XCircle,
-  Map,
-  UserCheck,
   CreditCard,
   FileCheck,
   Flag
@@ -65,20 +58,6 @@ interface TimelineNote {
   updatedAt?: string;
   author: string;
 }
-
-// Helper to determine step status
-const getStepStatus = (currentStatus: string, stepIndex: number) => {
-    const statusLevel: Record<string, number> = {
-        'new': 0,
-        'process': 1,
-        'interview': 2,
-        'hired': 3,
-        'rejected': 3
-    };
-    const currentLevel = statusLevel[currentStatus] ?? 0;
-    if (stepIndex <= currentLevel) return 'completed';
-    return 'pending';
-};
 
 // --- SIMPLE CHART COMPONENTS (SVG/CSS) ---
 const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: string }) => {
@@ -1008,11 +987,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       );
   };
 
-  // Pagination Logic
-  const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
-  const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
-  const endItem = Math.min(startItem + ITEMS_PER_PAGE - 1, totalCount);
-
   // Status Badge Logic for Drawer
   const getStatusBadge = (status: string) => {
      const styles = {
@@ -1802,7 +1776,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                             <div className="absolute left-[39px] top-6 bottom-6 w-0.5 bg-gray-200 z-0"></div>
 
                                                             <div className="space-y-6 relative z-10">
-                                                                {steps.map((step, sIdx) => {
+                                                                {steps.map((step) => {
                                                                     const isPassed = step.status === 'passed';
                                                                     const isFailed = step.status === 'failed';
                                                                     
