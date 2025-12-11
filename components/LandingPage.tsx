@@ -44,7 +44,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
   return (
     <div className="min-h-screen flex flex-col bg-white">
       {/* Navbar */}
-      <header className="fixed top-0 w-full z-50 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm">
+      <header className="fixed top-0 w-full z-50 bg-white backdrop-blur-md border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
@@ -53,7 +53,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
               className="w-36 h-36 object-contain" 
             />
           </div>
-          <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-600">
+          <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-800">
             <a href="#about" className="hover:text-brand-600 transition-colors">Tentang Kami</a>
             <a href="#services" className="hover:text-brand-600 transition-colors">Layanan</a>
             <a href="#clients" className="hover:text-brand-600 transition-colors">Klien</a>
