@@ -53,7 +53,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
               className="w-36 h-36 object-contain" 
             />
           </div>
-          <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-800">
+          <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-600">
             <a href="#about" className="hover:text-brand-600 transition-colors">Tentang Kami</a>
             <a href="#services" className="hover:text-brand-600 transition-colors">Layanan</a>
             <a href="#clients" className="hover:text-brand-600 transition-colors">Klien</a>
