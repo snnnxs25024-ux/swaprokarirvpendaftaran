@@ -621,6 +621,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               setSelectedApplicant({...selectedApplicant, status: newStatus});
           }
 
+          await fetchInterviews(selectedApplicant.id);
+
           setIsStepModalOpen(false);
           alert("Tahap berhasil dijadwalkan!");
       } catch (e: any) {
@@ -1589,7 +1591,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                         </div>
                                     </div>
 
-                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                             <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                                     <h3 className="font-bold text-gray-800 text-sm">Informasi Pribadi</h3>
                                     {!isEditing && <button onClick={startEditing} className="text-brand-600 text-xs hover:underline">Edit Data</button>}
@@ -1614,7 +1616,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 </div>
                              </div>
 
-                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                             <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 border-b pb-2">Data Alamat & Lokasi</h3>
                                 <div className="space-y-4">
                                     {renderEditField("Alamat Sesuai KTP", "alamat_ktp")}
@@ -1632,7 +1634,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 </div>
                              </div>
 
-                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                             <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 border-b pb-2">Motivasi & Lainnya</h3>
                                 {isEditing ? (
                                      <textarea 
@@ -1654,7 +1656,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
                     {activeDetailTab === 'qualification' && (
                         <div className="space-y-6 animate-fadeIn">
-                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><GraduationCap size={16}/> Pendidikan Terakhir</h3>
                                 <div className="grid grid-cols-2 gap-4">
                                     {renderEditField("Jenjang", "tingkat_pendidikan")}
@@ -1666,7 +1668,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 </div>
                             </div>
                             
-                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><Briefcase size={16}/> Pengalaman Kerja</h3>
                                 {selectedApplicant.has_pengalaman_kerja ? (
                                     <div className="space-y-3">
@@ -1682,7 +1684,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 )}
                             </div>
 
-                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><CheckCircle size={16}/> Aset & Dokumen</h3>
                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                      {['kendaraan_pribadi', 'sim_c', 'sim_a', 'ktp_asli', 'skck', 'npwp', 'riwayat_buruk_kredit'].map(key => {
@@ -1703,7 +1705,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
                     {activeDetailTab === 'documents' && (
                         <div className="space-y-6 animate-fadeIn">
-                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                            <div className="bg-white p-5 rounded-xl border border-blue-600 shadow-sm">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><FileText size={16}/> File Dokumen</h3>
                                 <div className="grid gap-3">
                                      <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex items-center gap-4 p-3 border rounded-lg hover:border-brand-500 hover:shadow-md transition-all">
@@ -1733,7 +1735,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                              {/* 1. CHAIN INTERVIEW SYSTEM */}
                              <div className="space-y-6">
                                 {interviewChains.length === 0 ? (
-                                    <div className="text-center py-10 bg-white rounded-xl border border-dashed border-gray-300">
+                                    <div className="text-center py-10 bg-white rounded-xl border border-dashed border-blue-600">
                                         <p className="text-gray-500 text-sm mb-4">Belum ada riwayat proses interview.</p>
                                         <button 
                                             onClick={openNewChainModal}
@@ -1879,12 +1881,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                              </div>
 
                              {/* 2. ACTIVITY LOG */}
-                             <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm mt-8">
+                             <div className="bg-gray-50 p-6 rounded-xl border border-blue-600 shadow-sm mt-8">
                                 <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2">
                                     <StickyNote size={16}/> Catatan Aktivitas Lainnya
                                 </h3>
                                 {/* ... (Note Input & List remains unchanged) ... */}
-                                <div className="mb-6 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                <div className="mb-6 bg-white p-3 rounded-lg border border-blue-600 shadow-sm">
                                     <textarea 
                                         className="w-full text-sm p-2 bg-transparent outline-none min-h-[80px] placeholder:text-gray-400"
                                         placeholder="Tulis catatan aktivitas baru..."
@@ -1909,7 +1911,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 </div>
                                 <div className="space-y-4">
                                     {timelineNotes.length === 0 ? (
-                                        <div className="text-center py-6 text-gray-400 text-xs italic border border-dashed border-gray-300 rounded-lg">
+                                        <div className="text-center py-6 text-gray-400 text-xs italic border border-dashed border-blue-600 rounded-lg">
                                             Belum ada catatan aktivitas tambahan.
                                         </div>
                                     ) : (
