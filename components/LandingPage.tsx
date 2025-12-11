@@ -48,14 +48,10 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onApply, onAdminClick 
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img 
-              src="https://i.imgur.com/Lf2IC1Z.png" 
+              src="https://i.imgur.com/P7t1bQy.png" 
               alt="Logo Swapro" 
-              className="w-10 h-10 object-contain" 
+              className="w-36 h-36 object-contain" 
             />
-            <div className="flex flex-col">
-              <span className="font-bold text-lg leading-tight text-slate-800 tracking-tight">PT SWAPRO</span>
-              <span className="text-xs font-semibold text-brand-600 tracking-widest">INTERNATIONAL</span>
-            </div>
           </div>
           <nav className="hidden md:flex gap-8 text-sm font-medium text-slate-600">
             <a href="#about" className="hover:text-brand-600 transition-colors">Tentang Kami</a>

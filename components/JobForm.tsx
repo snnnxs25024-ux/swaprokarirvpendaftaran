@@ -44,6 +44,11 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [positionOptions, setPositionOptions] = useState<{label: string, value: string}[]>([]);
   const [placementOptions, setPlacementOptions] = useState<{label: string, value: string}[]>([]);
 
+  // Helpers to get text from IDs
+  const getClientName = (id: string) => clientOptions.find(c => c.value === id)?.label || '';
+  const getPositionName = (id: string) => positionOptions.find(p => p.value === id)?.label || '';
+  const getPlacementName = (id: string) => placementOptions.find(p => p.value === id)?.label || '';
+
   useEffect(() => {
     const fetchMasterData = async () => {
       // Fetch Clients
@@ -71,7 +76,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         
         // Filter Positions by Client AND Active Status
         const filteredPos = allPositions.filter(p => p.client_id === clientId && p.is_active);
-        setPositionOptions(filteredPos.map(p => ({ label: p.name, value: p.value })));
+        // VALUE IS NOW ID (Stringified)
+        setPositionOptions(filteredPos.map(p => ({ label: p.name, value: p.id.toString() })));
 
     } else {
         // Reset
@@ -81,22 +87,18 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
   // Cascading Logic Level 2: Position -> Filter Placements
   useEffect(() => {
-     if (formData.posisiDilamar && formData.client) {
-        // Cari ID Posisi berdasarkan value string yang dipilih dan Client ID
-        const selectedPosObj = allPositions.find(p => p.value === formData.posisiDilamar && p.client_id === parseInt(formData.client));
+     if (formData.posisiDilamar) {
+        const positionId = parseInt(formData.posisiDilamar);
         
-        if (selectedPosObj) {
-            // Filter Placements by POSITION ID (Not Client ID anymore)
-            const filteredPlace = allPlacements.filter(p => p.position_id === selectedPosObj.id && p.is_active);
-            setPlacementOptions(filteredPlace.map(p => ({ label: p.label, value: p.value })));
-        } else {
-            setPlacementOptions([]);
-        }
+        // Filter Placements by POSITION ID
+        const filteredPlace = allPlacements.filter(p => p.position_id === positionId && p.is_active);
+        // VALUE IS NOW ID (Stringified)
+        setPlacementOptions(filteredPlace.map(p => ({ label: p.label, value: p.id.toString() })));
 
      } else {
         setPlacementOptions([]);
      }
-  }, [formData.posisiDilamar, formData.client, allPositions, allPlacements]);
+  }, [formData.posisiDilamar, allPlacements]);
 
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -222,11 +224,24 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
       if (!cvPath || !ktpPath) throw new Error("Gagal upload dokumen.");
 
+      // SNAPSHOT DATA (Backup Text)
+      const clientName = getClientName(formData.client);
+      const posName = getPositionName(formData.posisiDilamar);
+      const placeName = getPlacementName(formData.penempatan);
+
       const { error } = await supabase
         .from('applicants')
         .insert({
-          posisi_dilamar: formData.posisiDilamar,
-          penempatan: formData.penempatan, // Stores the value (e.g. ADIRA JAKARTA)
+          // RELATIONAL IDS (For Dynamic Updates)
+          client_id: parseInt(formData.client) || null,
+          position_id: parseInt(formData.posisiDilamar) || null,
+          placement_id: parseInt(formData.penempatan) || null,
+
+          // SNAPSHOT TEXTS (For Legacy/Backup)
+          mitra_klien: clientName, 
+          posisi_dilamar: posName,
+          penempatan: placeName, 
+
           nama_lengkap: formData.namaLengkap,
           nik: formData.nik,
           no_hp: formData.noHp,
@@ -284,24 +299,20 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   };
 
   if (submitted) {
-    // Determine WhatsApp Number based on the selected placement VALUE and POSITION ID (via value lookup)
+    // Logic for WA Link based on ID selection
     let recruiterNumber = "628123456789";
-    let regionName = formData.penempatan;
-
-    // 1. Find the selected position object first
-    const selectedPosObj = allPositions.find(p => p.value === formData.posisiDilamar && p.client_id === parseInt(formData.client));
+    let regionName = "";
     
-    if (selectedPosObj) {
-        // 2. Find the placement using position_id
-        const selectedPlaceObj = allPlacements.find(p => p.value === formData.penempatan && p.position_id === selectedPosObj.id);
-        if (selectedPlaceObj) {
-            recruiterNumber = selectedPlaceObj.recruiter_phone;
-            regionName = selectedPlaceObj.label;
-        }
+    // Find placement based on selected ID
+    const selectedPlaceObj = allPlacements.find(p => p.id.toString() === formData.penempatan);
+    if (selectedPlaceObj) {
+        recruiterNumber = selectedPlaceObj.recruiter_phone;
+        regionName = selectedPlaceObj.label;
     }
 
-    const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${formData.posisiDilamar} di ${regionName}. Mohon arahan selanjutnya.`;
-    // Gunakan api.whatsapp.com untuk kehandalan lebih baik daripada wa.me
+    const posName = getPositionName(formData.posisiDilamar);
+
+    const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${posName} di ${regionName}. Mohon arahan selanjutnya.`;
     const waLink = `https://api.whatsapp.com/send?phone=${recruiterNumber}&text=${encodeURIComponent(waMessage)}`;
 
     return (

@@ -1,6 +1,7 @@
+
 import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { ApplicantDB, JobPlacement, JobPosition, JobClient } from '../types';
+import { ApplicantDB, JobPlacement, JobPosition, JobClient, InterviewSession } from '../types';
 import { 
   LogOut, 
   Search, 
@@ -12,7 +13,6 @@ import {
   CheckCircle,
   MessageCircle,
   Trash2,
-  Edit,
   Save,
   Plus,
   Copy,
@@ -35,11 +35,50 @@ import {
   TrendingUp,
   PieChart,
   BarChart3,
-  Users
+  Users,
+  History,
+  ThumbsUp,
+  ThumbsDown,
+  MoreVertical,
+  AlertCircle,
+  Edit3,
+  Clock,
+  Circle,
+  Pencil,
+  Calendar,
+  XCircle,
+  Map,
+  UserCheck,
+  CreditCard,
+  FileCheck,
+  Flag
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
 const ITEMS_PER_PAGE = 20;
+
+// --- INTERFACES FOR TIMELINE & NOTES ---
+interface TimelineNote {
+  id: string;
+  content: string;
+  createdAt: string;
+  updatedAt?: string;
+  author: string;
+}
+
+// Helper to determine step status
+const getStepStatus = (currentStatus: string, stepIndex: number) => {
+    const statusLevel: Record<string, number> = {
+        'new': 0,
+        'process': 1,
+        'interview': 2,
+        'hired': 3,
+        'rejected': 3
+    };
+    const currentLevel = statusLevel[currentStatus] ?? 0;
+    if (stepIndex <= currentLevel) return 'completed';
+    return 'pending';
+};
 
 // --- SIMPLE CHART COMPONENTS (SVG/CSS) ---
 const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: string }) => {
@@ -54,11 +93,9 @@ const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: 
     return (
         <div className="h-40 w-full relative">
             <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
-                {/* Grid Lines */}
                 <line x1="0" y1="25" x2="100" y2="25" stroke="#f1f5f9" strokeWidth="0.5" />
                 <line x1="0" y1="50" x2="100" y2="50" stroke="#f1f5f9" strokeWidth="0.5" />
                 <line x1="0" y1="75" x2="100" y2="75" stroke="#f1f5f9" strokeWidth="0.5" />
-                {/* The Line */}
                 <polyline
                     fill="none"
                     stroke={color}
@@ -68,13 +105,11 @@ const SimpleLineChart = ({ data, color = '#3b82f6' }: { data: number[], color?: 
                     strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                 />
-                {/* Area under line (optional, for gradient effect) */}
                 <polygon 
                     fill={color} 
                     fillOpacity="0.1" 
                     points={`0,100 ${points} 100,100`} 
                 />
-                {/* Dots */}
                 {data.map((val, i) => {
                      const x = (i / (data.length - 1)) * 100;
                      const y = 100 - (val / max) * 100;
@@ -189,7 +224,7 @@ interface DashboardProps {
 }
 
 type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 'master_data';
-type DetailTab = 'profile' | 'qualification' | 'documents';
+type DetailTab = 'profile' | 'qualification' | 'documents' | 'journey';
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // DATA STATES
@@ -222,8 +257,50 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<ApplicantDB>>({});
   
+  // TIMELINE NOTES STATE (CRUD)
+  const [timelineNotes, setTimelineNotes] = useState<TimelineNote[]>([]);
   const [noteInput, setNoteInput] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [savingNote, setSavingNote] = useState(false);
+
+  // INTERVIEW SESSIONS STATE (CHAIN SYSTEM)
+  const [interviews, setInterviews] = useState<InterviewSession[]>([]);
+  
+  // New Modal States
+  const [isStepModalOpen, setIsStepModalOpen] = useState(false);
+  const [isResultModalOpen, setIsResultModalOpen] = useState(false);
+  
+  // Chain Logic States
+  const [targetChainId, setTargetChainId] = useState<string>(''); // Which chain we are appending to (empty for new)
+  const [stepType, setStepType] = useState<'interview' | 'slik' | 'pemberkasan' | 'join'>('interview');
+  const [selectedInterviewId, setSelectedInterviewId] = useState<number | null>(null);
+
+  // Dynamic Forms
+  const [stepForm, setStepForm] = useState({
+      // Shared
+      date: '',
+      time: '',
+      pic: '', // interviewer / pemeriksa
+      
+      // Interview Specific
+      location: '',
+      client: '', // Stores ID as string
+      position: '', // Stores ID as string
+      placement: '', // Stores ID as string
+      interviewer_job: '',
+
+      // Join Specific
+      contract_date: ''
+  });
+
+  const [resultForm, setResultForm] = useState({
+      status: 'passed',
+      note: '',
+      kol_result: '' // For SLIK
+  });
+
+  // ACTION MENU STATE (FIX: Click toggle instead of hover)
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
   const [copyFormData, setCopyFormData] = useState({
@@ -381,9 +458,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       if (place) setPlacements(place);
   };
 
+  const fetchInterviews = async (applicantId: number) => {
+      const { data } = await supabase
+        .from('interview_sessions')
+        .select('*')
+        .eq('applicant_id', applicantId)
+        .order('created_at', { ascending: true }); // Order by creation to show chain properly
+      if (data) setInterviews(data as InterviewSession[]);
+  };
+
   // --- EFFECT HOOKS ---
   
-  // Initial & Filter Change
+  // Initial Data Fetching (RUNS ONCE ON MOUNT TO ENSURE DROPDOWNS ARE FILLED)
+  useEffect(() => {
+    fetchMasterData(); // Fetch clients, positions, placements immediately
+    fetchStats();
+    if (activeTab === 'dashboard') {
+        fetchDashboardData();
+    } else {
+        fetchApplicants();
+    }
+  }, []);
+
+  // Filter Change Effect
   useEffect(() => {
     if (activeTab === 'dashboard') {
         fetchStats();
@@ -404,16 +501,49 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // Clear selection when tab changes
   useEffect(() => {
     setSelectedIds([]);
+    setIsActionMenuOpen(false); // Reset menu state on tab change
   }, [activeTab, currentPage]);
 
-  // Update Note Input when selecting applicant
+  // Update Note Input when selecting applicant (PARSE JSON) & Fetch Interviews
   useEffect(() => {
     if (selectedApplicant) {
-      setNoteInput(selectedApplicant.internal_notes || '');
-      setActiveDetailTab('profile');
+      // 1. Fetch Timeline Notes
+      if (selectedApplicant.internal_notes) {
+          try {
+              const parsed = JSON.parse(selectedApplicant.internal_notes);
+              if(Array.isArray(parsed)) {
+                  setTimelineNotes(parsed);
+              } else {
+                  setTimelineNotes([{ id: 'legacy', content: selectedApplicant.internal_notes, createdAt: selectedApplicant.created_at, author: 'HRD (Legacy)' }]);
+              }
+          } catch (e) {
+              setTimelineNotes([{ id: 'legacy', content: selectedApplicant.internal_notes, createdAt: selectedApplicant.created_at, author: 'HRD (Legacy)' }]);
+          }
+      } else {
+          setTimelineNotes([]);
+      }
+      
+      // 2. Fetch Interview Sessions
+      fetchInterviews(selectedApplicant.id);
+
+      setNoteInput('');
+      setEditingNoteId(null);
       setIsEditing(false);
+      setIsActionMenuOpen(false); 
     }
   }, [selectedApplicant]);
+
+  // Keydown for Navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (!selectedApplicant) return;
+        if (e.key === 'ArrowRight') handleNext();
+        if (e.key === 'ArrowLeft') handlePrev();
+        if (e.key === 'Escape') setSelectedApplicant(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedApplicant, applicants]);
 
   // Realtime Listener
   useEffect(() => {
@@ -425,10 +555,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_clients' }, fetchMasterData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_positions' }, fetchMasterData)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'job_placements' }, fetchMasterData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'interview_sessions' }, () => {
+          if (selectedApplicant) fetchInterviews(selectedApplicant.id);
+      })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [fetchApplicants, fetchDashboardData, activeTab]);
+  }, [fetchApplicants, fetchDashboardData, activeTab, selectedApplicant]);
 
 
   // --- ACTIONS ---
@@ -437,13 +570,186 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
   };
 
-  const handleSaveNote = async () => {
-    if (!selectedApplicant) return;
+  // --- CRUD INTERVIEW SESSIONS (CHAIN LOGIC) ---
+  const openNewChainModal = () => {
+      setTargetChainId(''); // Empty means NEW CHAIN
+      setStepType('interview'); // Always start with Interview
+      // Reset Form with Defaults
+      setStepForm({
+          date: '', time: '', pic: '', 
+          location: '', client: '', position: '', placement: '', interviewer_job: '', contract_date: ''
+      });
+      setIsStepModalOpen(true);
+  };
+
+  const openNextStepModal = (chainId: string) => {
+      setTargetChainId(chainId);
+      setStepType('interview'); // Default choice
+      setStepForm({
+          date: '', time: '', pic: '', 
+          location: '', client: '', position: '', placement: '', interviewer_job: '', contract_date: ''
+      });
+      setIsStepModalOpen(true);
+  };
+
+  const handleSaveStep = async () => {
+      if(!selectedApplicant) return;
+      if(!stepForm.date && stepType !== 'join') return alert("Tanggal wajib diisi"); // Join date might be different logic
+
+      try {
+          const newChainId = targetChainId || Date.now().toString(); // Generate ID if new
+          const fullDate = new Date(`${stepForm.date}T${stepForm.time || '09:00'}`).toISOString();
+
+          // Build Meta Data based on Type
+          let metaData: any = {};
+          if (stepType === 'interview') {
+              // RESOLVE NAMES FROM IDS FOR DISPLAY
+              const clientName = clients.find(c => c.id.toString() === stepForm.client)?.name || stepForm.client;
+              const posName = positions.find(p => p.id.toString() === stepForm.position)?.name || stepForm.position;
+              const placeName = placements.find(p => p.id.toString() === stepForm.placement)?.label || stepForm.placement;
+
+              metaData = {
+                  client: clientName,
+                  position: posName,
+                  placement: placeName,
+                  interviewer_job: stepForm.interviewer_job
+              };
+          } else if (stepType === 'join') {
+              metaData = {
+                  contract_date: stepForm.contract_date
+              };
+          }
+
+          // Insert
+          await supabase.from('interview_sessions').insert({
+              applicant_id: selectedApplicant.id,
+              chain_id: newChainId,
+              step_type: stepType,
+              interview_date: fullDate,
+              location: stepForm.location || '-',
+              interviewer: stepForm.pic || '-', // Standardize column usage
+              status: 'scheduled',
+              meta_data: metaData
+          });
+
+          // Update Main Status based on step
+          let newStatus = 'process';
+          if (stepType === 'interview') newStatus = 'interview';
+          if (stepType === 'join') newStatus = 'hired';
+          
+          if (selectedApplicant.status !== newStatus) {
+              await updateStatus(selectedApplicant.id, newStatus);
+              setSelectedApplicant({...selectedApplicant, status: newStatus});
+          }
+
+          setIsStepModalOpen(false);
+          alert("Tahap berhasil dijadwalkan!");
+      } catch (e: any) {
+          alert("Error: " + e.message);
+      }
+  };
+
+  const handleUpdateResult = async () => {
+      if(!selectedInterviewId) return;
+      try {
+          // Get current meta data to append KOL result if SLIK
+          const currentStep = interviews.find(i => i.id === selectedInterviewId);
+          let newMeta = currentStep?.meta_data || {};
+          
+          if (currentStep?.step_type === 'slik') {
+              newMeta = { ...newMeta, kol_result: resultForm.kol_result };
+          }
+
+          await supabase.from('interview_sessions').update({
+              status: resultForm.status,
+              result_note: resultForm.note,
+              meta_data: newMeta
+          }).eq('id', selectedInterviewId);
+          
+          // If Failed/Rejected, update main applicant status too?
+          if (resultForm.status === 'failed' && selectedApplicant) {
+               // Optional: Update main status to rejected? Or keep it process?
+               // Let's keep flexibility, user manually rejects from main dropdown if needed.
+          }
+
+          setIsResultModalOpen(false);
+          setResultForm({ status: 'passed', note: '', kol_result: '' });
+      } catch (e: any) { alert("Error: " + e.message); }
+  };
+
+  const deleteInterview = async (id: number) => {
+      if(!window.confirm("Hapus jadwal ini?")) return;
+      await supabase.from('interview_sessions').delete().eq('id', id);
+  };
+
+  // Helper to group interviews by chain
+  const groupedInterviews = interviews.reduce((groups, interview) => {
+      const chain = interview.chain_id || 'legacy';
+      if (!groups[chain]) groups[chain] = [];
+      groups[chain].push(interview);
+      return groups;
+  }, {} as Record<string, InterviewSession[]>);
+
+  const interviewChains = Object.entries(groupedInterviews) as [string, InterviewSession[]][];
+
+  // --- CRUD TIMELINE NOTES ---
+  const handleSaveTimelineNote = async () => {
+    if (!selectedApplicant || !noteInput.trim()) return;
     setSavingNote(true);
+    
     try {
-        await supabase.from('applicants').update({ internal_notes: noteInput }).eq('id', selectedApplicant.id);
-        alert("Catatan disimpan.");
-    } catch (err) { alert("Gagal menyimpan."); } finally { setSavingNote(false); }
+        let updatedNotes: TimelineNote[] = [];
+
+        if (editingNoteId) {
+            // Update Existing
+            updatedNotes = timelineNotes.map(n => n.id === editingNoteId ? { ...n, content: noteInput, updatedAt: new Date().toISOString() } : n);
+        } else {
+            // Create New
+            const newNote: TimelineNote = {
+                id: Date.now().toString(),
+                content: noteInput,
+                createdAt: new Date().toISOString(),
+                author: 'HRD'
+            };
+            updatedNotes = [newNote, ...timelineNotes]; // Add to top
+        }
+
+        const jsonString = JSON.stringify(updatedNotes);
+        const { error } = await supabase.from('applicants').update({ internal_notes: jsonString }).eq('id', selectedApplicant.id);
+        
+        if (error) throw error;
+        
+        setTimelineNotes(updatedNotes);
+        setNoteInput('');
+        setEditingNoteId(null);
+        setSelectedApplicant(prev => prev ? { ...prev, internal_notes: jsonString } : null);
+
+    } catch (err: any) {
+        alert("Gagal menyimpan: " + err.message);
+    } finally {
+        setSavingNote(false);
+    }
+  };
+
+  const handleEditTimelineNote = (note: TimelineNote) => {
+      setNoteInput(note.content);
+      setEditingNoteId(note.id);
+      // Optional: focus input
+  };
+
+  const handleDeleteTimelineNote = async (noteId: string) => {
+      if (!selectedApplicant || !window.confirm("Hapus catatan ini?")) return;
+      const updatedNotes = timelineNotes.filter(n => n.id !== noteId);
+      const jsonString = JSON.stringify(updatedNotes);
+      
+      await supabase.from('applicants').update({ internal_notes: jsonString }).eq('id', selectedApplicant.id);
+      setTimelineNotes(updatedNotes);
+      setSelectedApplicant(prev => prev ? { ...prev, internal_notes: jsonString } : null);
+  };
+  
+  const handleCancelEditNote = () => {
+      setNoteInput('');
+      setEditingNoteId(null);
   };
 
   const toggleSelectAll = () => {
@@ -470,6 +776,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const handleDelete = async (id: number) => {
     if (!window.confirm("Hapus permanen?")) return;
     await supabase.from('applicants').delete().eq('id', id);
+    if (selectedApplicant?.id === id) setSelectedApplicant(null);
   };
 
   const startEditing = () => { 
@@ -485,15 +792,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       const { error } = await supabase.from('applicants').update(editFormData).eq('id', selectedApplicant.id);
       if (error) throw error;
       setIsEditing(false);
+      setSelectedApplicant(prev => prev ? ({...prev, ...editFormData}) : null);
       alert("Data berhasil diperbarui!");
     } catch (err: any) { alert("Gagal update: " + err.message); }
+  };
+
+  // --- DRAWER NAVIGATION ---
+  const currentApplicantIndex = selectedApplicant ? applicants.findIndex(a => a.id === selectedApplicant.id) : -1;
+
+  const handleNext = () => {
+      if (currentApplicantIndex > -1 && currentApplicantIndex < applicants.length - 1) {
+          setSelectedApplicant(applicants[currentApplicantIndex + 1]);
+      }
+  };
+
+  const handlePrev = () => {
+      if (currentApplicantIndex > 0) {
+          setSelectedApplicant(applicants[currentApplicantIndex - 1]);
+      }
   };
 
   // --- EXCEL COPY & WA HANDLERS ---
   const openCopyModal = () => {
     if (!selectedApplicant) return;
     let shortPos = 'SO';
-    const appliedPos = selectedApplicant.posisi_dilamar.toUpperCase();
+    const jobContext = getApplicantJobContext(selectedApplicant);
+    const appliedPos = jobContext.position.toUpperCase();
     if (appliedPos.includes('KOLEKTOR') || appliedPos.includes('REMEDIAL')) shortPos = 'COLLECTION';
     else if (appliedPos.includes('RELATION')) shortPos = 'RO';
     
@@ -518,7 +842,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleSelectTemplate = (template: typeof WA_TEMPLATES[0]) => {
     if (!waTarget) return;
-    const msg = template.getMessage(waTarget.nama_lengkap, waTarget.posisi_dilamar);
+    const jobContext = getApplicantJobContext(waTarget);
+    const msg = template.getMessage(waTarget.nama_lengkap, jobContext.position);
     setWaDraft(msg);
     setWaStep('editing');
   };
@@ -539,6 +864,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
   const toggleClient = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_clients').update({ is_active: !currentStatus }).eq('id', id);
+  };
+  const editClient = async (id: number, currentName: string) => {
+    const newName = window.prompt("Ubah Nama Klien:", currentName);
+    if(newName && newName !== currentName) {
+        await supabase.from('job_clients').update({ name: newName }).eq('id', id);
+    }
   };
   const handleDeleteClient = async (id: number) => {
     const confirmMsg = "⚠️ PERINGATAN KERAS!\n\nMenghapus Klien ini akan MENGHAPUS OTOMATIS semua Posisi dan Penempatan yang terhubung.\n\nApakah Anda yakin ingin melanjutkan?";
@@ -569,6 +900,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const togglePosition = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_positions').update({ is_active: !currentStatus }).eq('id', id);
   };
+  const editPosition = async (id: number, currentName: string) => {
+    const newName = window.prompt("Ubah Nama Posisi:", currentName);
+    if(newName && newName !== currentName) {
+        await supabase.from('job_positions').update({ name: newName }).eq('id', id);
+    }
+  };
   const handleDeletePosition = async (id: number) => {
     if(!window.confirm("Yakin ingin menghapus Posisi ini? Semua Penempatan di dalamnya akan terhapus.")) return;
     await supabase.from('job_placements').delete().eq('position_id', id);
@@ -590,6 +927,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const togglePlacement = async (id: number, currentStatus: boolean) => {
     await supabase.from('job_placements').update({ is_active: !currentStatus }).eq('id', id);
   };
+  const editPlacement = async (id: number, currentName: string) => {
+    const newName = window.prompt("Ubah Nama Penempatan:", currentName);
+    if(newName && newName !== currentName) {
+        await supabase.from('job_placements').update({ label: newName }).eq('id', id);
+    }
+  };
   const handleDeletePlacement = async (id: number) => {
      if(!window.confirm("Yakin ingin menghapus Penempatan ini?")) return;
      const { error } = await supabase.from('job_placements').delete().eq('id', id);
@@ -603,6 +946,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       const pos = positions.find(pos => pos.id === p.position_id);
       const cli = pos ? clients.find(c => c.id === pos.client_id) : null;
       return { positionName: pos ? pos.name : 'Unknown Pos', clientName: cli ? cli.name : 'Unknown Client' };
+  };
+
+  // --- DYNAMIC RESOLVER FOR APPLICANT DATA ---
+  const getApplicantJobContext = (app: ApplicantDB) => {
+      // 1. Try to resolve via ID (The New Way)
+      if (app.placement_id) {
+          const placementMatch = placements.find(p => p.id === app.placement_id);
+          const positionMatch = positions.find(p => p.id === app.position_id);
+          const clientMatch = clients.find(c => c.id === app.client_id);
+
+          return {
+              client: clientMatch ? clientMatch.name : (app.mitra_klien || 'Unknown Client'),
+              position: positionMatch ? positionMatch.name : (app.posisi_dilamar || 'Unknown Pos'),
+              placement: placementMatch ? placementMatch.label : (app.penempatan || 'Unknown Placement'),
+              isDynamic: true
+          };
+      }
+
+      // 2. Fallback to Snapshot Text (Legacy Data)
+      return {
+          client: app.mitra_klien || '-',
+          position: app.posisi_dilamar,
+          placement: app.penempatan,
+          isDynamic: false
+      };
   };
 
   const renderEditField = (label: string, field: keyof ApplicantDB, type = 'text', options?: string[]) => {
@@ -644,6 +1012,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
   const startItem = (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const endItem = Math.min(startItem + ITEMS_PER_PAGE - 1, totalCount);
+
+  // Status Badge Logic for Drawer
+  const getStatusBadge = (status: string) => {
+     const styles = {
+        new: 'bg-blue-100 text-blue-700 border-blue-200',
+        process: 'bg-amber-100 text-amber-700 border-amber-200',
+        interview: 'bg-purple-100 text-purple-700 border-purple-200',
+        hired: 'bg-green-100 text-green-700 border-green-200',
+        rejected: 'bg-red-100 text-red-700 border-red-200'
+     };
+     // @ts-ignore
+     return styles[status] || styles['new'];
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans">
@@ -806,8 +1187,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                              {c.is_active ? <Eye size={20} /> : <EyeOff size={20} />}
                                           </button>
                                        </td>
-                                       <td className="p-3 text-right">
-                                          <button onClick={() => handleDeleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"><Trash2 size={18}/></button>
+                                       <td className="p-3 text-right flex justify-end gap-1">
+                                          <button onClick={() => editClient(c.id, c.name)} className="text-brand-500 hover:bg-brand-50 p-1.5 rounded transition-colors" title="Edit Nama"><Pencil size={18}/></button>
+                                          <button onClick={() => handleDeleteClient(c.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="Hapus"><Trash2 size={18}/></button>
                                        </td>
                                    </tr>
                                ))}
@@ -841,7 +1223,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                     {p.is_active ? <Eye size={18} /> : <EyeOff size={18} />}
                                                 </button>
                                             </td>
-                                            <td className="p-3 text-right">
+                                            <td className="p-3 text-right flex justify-end gap-1">
+                                                <button onClick={() => editPosition(p.id, p.name)} className="text-brand-500 hover:bg-brand-50 p-1.5 rounded transition-colors" title="Edit Nama"><Pencil size={18}/></button>
                                                 <button onClick={() => handleDeletePosition(p.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={18}/></button>
                                             </td>
                                         </tr>
@@ -862,7 +1245,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                  <label className="text-xs font-bold text-gray-500">1. Pilih Klien</label>
                                  <select className="border p-2 rounded w-48" value={placementClientFilter} onChange={e => {setPlacementClientFilter(e.target.value); setPlacementPositionFilter('');}}>
                                     <option value="">-- Pilih Klien --</option>
-                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    {clients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
                                  </select>
                               </div>
                               <div className="flex flex-col gap-1">
@@ -909,7 +1292,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                     {p.is_active ? <Eye size={18} /> : <EyeOff size={18} />}
                                                 </button>
                                             </td>
-                                            <td className="p-3 text-right">
+                                            <td className="p-3 text-right flex justify-end gap-1">
+                                                <button onClick={() => editPlacement(p.id, p.label)} className="text-brand-500 hover:bg-brand-50 p-1.5 rounded transition-colors" title="Edit Nama"><Pencil size={18}/></button>
                                                 <button onClick={() => handleDeletePlacement(p.id)} className="text-red-500 hover:bg-red-50 p-1.5 rounded"><Trash2 size={18}/></button>
                                             </td>
                                         </tr>
@@ -999,6 +1383,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 rowClass = "bg-amber-50/60 border-l-4 border-l-amber-500 hover:bg-amber-100/50";
                             }
 
+                            // Notes indicator (Check json or string)
+                            const hasNotes = app.internal_notes && app.internal_notes !== "[]" && app.internal_notes !== "";
+
+                            // DYNAMIC RESOLVER FOR NAMES
+                            const jobContext = getApplicantJobContext(app);
+
                             return (
                                 <tr key={app.id} className={`transition-all hover:shadow-sm ${rowClass}`}>
                                     <td className="p-4">
@@ -1011,14 +1401,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                     <div className="text-xs text-slate-400">{new Date(app.created_at).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</div>
                                     </td>
                                     <td className="p-4">
-                                    <div className="font-bold text-slate-900">{app.nama_lengkap}</div>
+                                    <div className="font-bold text-slate-900 cursor-pointer hover:text-brand-600" onClick={() => setSelectedApplicant(app)}>{app.nama_lengkap}</div>
                                     <div className="text-xs text-slate-500 flex items-center gap-1">
                                         {app.jenis_kelamin === 'Laki-laki' ? 'L' : 'P'} • {app.umur} Th • {app.tingkat_pendidikan}
                                     </div>
                                     </td>
                                     <td className="p-4">
-                                    <div className="text-sm font-semibold text-brand-700">{app.posisi_dilamar}</div>
-                                    <div className="text-xs text-slate-500">{app.penempatan}</div>
+                                    <div className="text-xs font-bold text-gray-500 mb-0.5">{jobContext.client}</div>
+                                    <div className="text-sm font-semibold text-brand-700">{jobContext.position}</div>
+                                    <div className="text-xs text-slate-500">{jobContext.placement}</div>
                                     </td>
                                     <td className="p-4">
                                     <div className="text-sm text-slate-700">{app.no_hp}</div>
@@ -1041,7 +1432,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                         <option value="hired">Diterima</option>
                                         <option value="rejected">Ditolak</option>
                                     </select>
-                                    {app.internal_notes && <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-600"><StickyNote size={10}/> Ada Catatan</div>}
+                                    {hasNotes && <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-600"><StickyNote size={10}/> Ada Catatan</div>}
                                     </td>
                                     <td className="p-4 text-right">
                                     <div className="flex items-center justify-end gap-2">
@@ -1060,30 +1451,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                     </table>
                 )}
               </div>
-
-              {/* PAGINATION CONTROLS */}
-              <div className="bg-gray-50 p-4 border-t border-gray-200 flex items-center justify-between">
-                 <div className="text-sm text-gray-500">
-                    Menampilkan <span className="font-bold">{totalCount > 0 ? startItem : 0}-{endItem}</span> dari <span className="font-bold">{totalCount}</span> data
-                 </div>
-                 <div className="flex items-center gap-2">
-                    <button 
-                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                        disabled={currentPage === 1 || loading}
-                        className="p-2 rounded border bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <ChevronLeft size={16}/>
-                    </button>
-                    <span className="text-sm font-semibold px-2">Halaman {currentPage} / {Math.max(totalPages, 1)}</span>
-                    <button 
-                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                        disabled={currentPage >= totalPages || loading}
-                        className="p-2 rounded border bg-white hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <ChevronRight size={16}/>
-                    </button>
-                 </div>
-              </div>
             </div>
         )}
       </main>
@@ -1091,7 +1458,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       {/* WA TEMPLATE MODAL */}
       {waTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col max-h-[90vh]">
             <div className="p-4 border-b flex justify-between items-center bg-gray-50">
               <h3 className="font-bold text-gray-800 flex items-center gap-2">
                   <MessageCircle className="text-green-600" size={20}/> 
@@ -1142,223 +1509,780 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         </div>
       )}
 
-      {/* DETAIL MODAL WITH TABS */}
+      {/* --- SIDE DRAWER IMPLEMENTATION --- */}
+      
+      {/* 1. Backdrop */}
       {selectedApplicant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
-            {/* HEADER MODAL */}
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50">
-               <div>
-                  <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                     {isEditing ? <input className="border rounded px-2" value={editFormData.nama_lengkap} onChange={e=>setEditFormData({...editFormData, nama_lengkap: e.target.value})} /> : selectedApplicant.nama_lengkap}
-                     <span className={`text-xs px-2 py-0.5 rounded border ${selectedApplicant.status === 'hired' ? 'bg-green-100 border-green-200 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-600'}`}>{selectedApplicant.status || 'NEW'}</span>
-                  </h2>
-                  <p className="text-sm text-gray-500">{isEditing ? <input className="border rounded w-40 text-xs px-1" value={editFormData.nik} onChange={e=>setEditFormData({...editFormData, nik: e.target.value})} placeholder="NIK"/> : `NIK: ${selectedApplicant.nik}`} • Tgl: {new Date(selectedApplicant.created_at).toLocaleDateString()}</p>
+        <div 
+           className="fixed inset-0 z-[45] bg-slate-900/40 backdrop-blur-sm transition-opacity"
+           onClick={() => setSelectedApplicant(null)}
+        />
+      )}
+
+      {/* 2. Sliding Panel */}
+      <div className={`fixed top-0 right-0 h-full w-full md:w-[600px] bg-white shadow-2xl z-[50] transform transition-transform duration-300 ease-in-out flex flex-col ${selectedApplicant ? 'translate-x-0' : 'translate-x-full'}`}>
+          {selectedApplicant && (
+            <>
+               {/* DRAWER HEADER */}
+               <div className="flex-none p-5 border-b border-gray-100 flex items-center justify-between bg-white z-10 shadow-sm">
+                   <div>
+                       <div className="flex items-center gap-2 mb-1">
+                          <h2 className="text-xl font-bold text-gray-900">
+                             {isEditing ? <input className="border rounded px-2" value={editFormData.nama_lengkap} onChange={e=>setEditFormData({...editFormData, nama_lengkap: e.target.value})} /> : selectedApplicant.nama_lengkap}
+                          </h2>
+                          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${getStatusBadge(selectedApplicant.status || 'new')}`}>
+                            {selectedApplicant.status || 'NEW'}
+                          </span>
+                       </div>
+                       <p className="text-xs text-gray-500">
+                         NIK: {selectedApplicant.nik} • {selectedApplicant.posisi_dilamar}
+                       </p>
+                   </div>
+                   
+                   <div className="flex items-center gap-3">
+                        <div className="flex items-center bg-gray-100 rounded-lg p-1">
+                            <button 
+                                onClick={handlePrev} 
+                                disabled={currentApplicantIndex <= 0}
+                                className="p-1.5 hover:bg-white rounded-md disabled:opacity-30 transition-all text-gray-600"
+                                title="Sebelumnya"
+                            >
+                                <ChevronLeft size={20}/>
+                            </button>
+                            <div className="w-px h-4 bg-gray-300 mx-1"></div>
+                            <button 
+                                onClick={handleNext} 
+                                disabled={currentApplicantIndex === -1 || currentApplicantIndex >= applicants.length - 1}
+                                className="p-1.5 hover:bg-white rounded-md disabled:opacity-30 transition-all text-gray-600"
+                                title="Selanjutnya"
+                            >
+                                <ChevronRight size={20}/>
+                            </button>
+                        </div>
+                        <button onClick={() => setSelectedApplicant(null)} className="p-2 hover:bg-red-50 text-gray-400 hover:text-red-500 rounded-full transition-colors">
+                            <X size={24} />
+                        </button>
+                   </div>
                </div>
-               <div className="flex gap-2">
-                  {!isEditing ? (
-                     <>
-                        <button onClick={openCopyModal} className="flex items-center gap-1 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100 text-sm font-semibold"><Copy size={16}/> Salin Excel</button>
-                        <button onClick={startEditing} className="p-2 hover:bg-gray-200 rounded text-gray-500" title="Edit Data"><Edit size={20}/></button>
-                        <button onClick={() => setSelectedApplicant(null)} className="p-2 hover:bg-gray-200 rounded text-gray-500"><X size={24} /></button>
-                     </>
-                  ) : (
-                     <>
-                        <button onClick={saveChanges} className="flex items-center gap-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"><Save size={16}/> Simpan</button>
-                        <button onClick={() => setIsEditing(false)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Batal</button>
-                     </>
-                  )}
+
+               {/* STICKY TABS */}
+               <div className="flex border-b border-gray-100 bg-white px-2 sticky top-0 z-20 overflow-x-auto no-scrollbar">
+                    {['profile', 'qualification', 'documents', 'journey'].map((tab) => (
+                        <button 
+                            key={tab}
+                            onClick={() => setActiveDetailTab(tab as DetailTab)} 
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 whitespace-nowrap 
+                                ${activeDetailTab === tab ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+                        >
+                            {tab === 'profile' && <User size={16} />}
+                            {tab === 'qualification' && <Briefcase size={16} />}
+                            {tab === 'documents' && <FileText size={16} />}
+                            {tab === 'journey' && <History size={16} />}
+                            <span className="capitalize">{tab === 'journey' ? 'Interview & Riwayat' : tab}</span>
+                        </button>
+                    ))}
                </div>
-            </div>
 
-            {/* TAB NAVIGATION */}
-            <div className="flex border-b border-gray-100 bg-white px-6">
-                <button 
-                    onClick={() => setActiveDetailTab('profile')} 
-                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'profile' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                >
-                    <User size={16} /> Profil & Alamat
-                </button>
-                <button 
-                    onClick={() => setActiveDetailTab('qualification')} 
-                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'qualification' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                >
-                    <Briefcase size={16} /> Kualifikasi
-                </button>
-                <button 
-                    onClick={() => setActiveDetailTab('documents')} 
-                    className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors flex items-center gap-2 ${activeDetailTab === 'documents' ? 'border-brand-600 text-brand-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-                >
-                    <FileText size={16} /> Dokumen & Catatan
-                </button>
-            </div>
+               {/* SCROLLABLE CONTENT */}
+               <div className="flex-1 overflow-y-auto p-6 bg-slate-50 pb-24">
+                    {/* ... (Previous Profile, Qualification, Docs Tabs Remain Unchanged) ... */}
+                    {activeDetailTab === 'profile' && (
+                        <div className="space-y-6 animate-fadeIn">
+                             {/* ... (Existing profile content) ... */}
+                             <div className="bg-gradient-to-r from-slate-800 to-slate-900 text-white p-5 rounded-xl shadow-lg relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
+                                        
+                                        <h3 className="font-bold text-xs text-slate-400 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <Building2 size={14}/> Informasi Lamaran
+                                        </h3>
+                                        
+                                        <div className="grid grid-cols-2 gap-y-4 gap-x-8 relative z-10">
+                                            <div>
+                                                <label className="text-[10px] font-medium text-slate-400 block mb-1">MITRA KLIEN</label>
+                                                <div className="text-lg font-bold text-white tracking-tight">{getApplicantJobContext(selectedApplicant).client}</div>
+                                            </div>
+                                            <div>
+                                                <label className="text-[10px] font-medium text-slate-400 block mb-1">POSISI DILAMAR</label>
+                                                <div className="text-base font-semibold text-brand-200">{getApplicantJobContext(selectedApplicant).position}</div>
+                                            </div>
+                                            <div className="col-span-2 pt-3 border-t border-white/10">
+                                                <label className="text-[10px] font-medium text-slate-400 block mb-1">LOKASI PENEMPATAN</label>
+                                                <div className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                                                    <MapPin size={14} className="text-brand-400"/>
+                                                    {getApplicantJobContext(selectedApplicant).placement}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
 
-            {/* TAB CONTENT */}
-            <div className="flex-1 overflow-y-auto p-8 bg-white">
-                {activeDetailTab === 'profile' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Data Pribadi</h3>
-                            <div className="space-y-1">
-                                {renderEditField("No HP/WA", "no_hp")}
-                                {renderEditField("Tempat Lahir", "tempat_lahir")}
-                                {renderEditField("Tanggal Lahir", "tanggal_lahir", "date")}
-                                {renderEditField("Jenis Kelamin", "jenis_kelamin", "text", ['Laki-laki', 'Perempuan'])}
-                                {renderEditField("Status Perkawinan", "status_perkawinan", "text", ['Belum Menikah', 'Menikah', 'Cerai'])}
-                                {renderEditField("Agama", "agama", "text", ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Lainnya'])}
-                                {renderEditField("Nama Ibu Kandung", "nama_ibu")}
-                                {renderEditField("Nama Ayah Kandung", "nama_ayah")}
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Alamat Lengkap</h3>
-                            <div className="space-y-1">
-                                {renderEditField("Alamat KTP", "alamat_ktp")}
-                                {renderEditField("Alamat Domisili", "alamat_domisili")}
-                                <div className="grid grid-cols-2 gap-4">
-                                    {renderEditField("RT/RW", "rt_rw")}
-                                    {renderEditField("No Rumah", "nomor_rumah")}
+                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                                    <h3 className="font-bold text-gray-800 text-sm">Informasi Pribadi</h3>
+                                    {!isEditing && <button onClick={startEditing} className="text-brand-600 text-xs hover:underline">Edit Data</button>}
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
-                                    {renderEditField("Kelurahan", "kelurahan")}
-                                    {renderEditField("Kecamatan", "kecamatan")}
+                                    <div className="col-span-2">{renderEditField("NIK (KTP)", "nik", "number")}</div>
+                                    {renderEditField("No HP/WA", "no_hp")}
+                                    {renderEditField("Umur", "umur", "number")}
+                                    {renderEditField("Tempat Lahir", "tempat_lahir")}
+                                    {renderEditField("Tanggal Lahir", "tanggal_lahir", "date")}
+                                    {renderEditField("Jenis Kelamin", "jenis_kelamin", "text", ['Laki-laki', 'Perempuan'])}
+                                    {renderEditField("Agama", "agama", "text", ['Islam', 'Kristen', 'Katolik', 'Hindu', 'Buddha', 'Lainnya'])}
+                                    {renderEditField("Status Nikah", "status_perkawinan", "text", ['Belum Menikah', 'Menikah', 'Cerai'])}
+                                    
+                                    <div className="col-span-2 pt-4 border-t mt-2">
+                                        <h4 className="text-xs font-bold text-gray-500 mb-3 uppercase">Data Keluarga</h4>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {renderEditField("Nama Ibu Kandung", "nama_ibu")}
+                                            {renderEditField("Nama Ayah Kandung", "nama_ayah")}
+                                        </div>
+                                    </div>
                                 </div>
+                             </div>
+
+                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 border-b pb-2">Data Alamat & Lokasi</h3>
+                                <div className="space-y-4">
+                                    {renderEditField("Alamat Sesuai KTP", "alamat_ktp")}
+                                    {renderEditField("Domisili Saat Ini", "alamat_domisili")}
+                                    <div className="grid grid-cols-2 gap-4">
+                                        {renderEditField("RT / RW", "rt_rw")}
+                                        {renderEditField("Nomor Rumah", "nomor_rumah")}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-50">
+                                        {renderEditField("Kelurahan", "kelurahan")}
+                                        {renderEditField("Kecamatan", "kecamatan")}
+                                        {renderEditField("Kota/Kab", "kota")}
+                                        {renderEditField("Kode Pos", "kode_pos")}
+                                    </div>
+                                </div>
+                             </div>
+
+                             <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 border-b pb-2">Motivasi & Lainnya</h3>
+                                {isEditing ? (
+                                     <textarea 
+                                        className="w-full border p-2 rounded text-sm min-h-[100px]" 
+                                        placeholder="Alasan melamar..."
+                                        value={editFormData.alasan_melamar || ''} 
+                                        onChange={e => setEditFormData({...editFormData, alasan_melamar: e.target.value})}
+                                     />
+                                ) : (
+                                    <div className="bg-gray-50 p-4 rounded-lg text-sm text-gray-700 italic border border-gray-100 relative">
+                                        <span className="text-3xl text-gray-300 absolute -top-2 left-2">“</span>
+                                        <p className="px-4 relative z-10">{selectedApplicant.alasan_melamar || 'Tidak ada data alasan melamar.'}</p>
+                                        <span className="text-3xl text-gray-300 absolute -bottom-4 right-2">”</span>
+                                    </div>
+                                )}
+                             </div>
+                        </div>
+                    )}
+
+                    {activeDetailTab === 'qualification' && (
+                        <div className="space-y-6 animate-fadeIn">
+                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><GraduationCap size={16}/> Pendidikan Terakhir</h3>
                                 <div className="grid grid-cols-2 gap-4">
-                                    {renderEditField("Kota/Kab", "kota")}
-                                    {renderEditField("Kode Pos", "kode_pos")}
+                                    {renderEditField("Jenjang", "tingkat_pendidikan")}
+                                    {renderEditField("Jurusan", "jurusan")}
+                                    <div className="col-span-2">{renderEditField("Nama Sekolah", "nama_sekolah")}</div>
+                                    {renderEditField("Tahun Masuk", "tahun_masuk")}
+                                    {renderEditField("Tahun Lulus", "tahun_lulus")}
+                                    {renderEditField("IPK", "ipk")}
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                )}
-
-                {activeDetailTab === 'qualification' && (
-                    <div className="space-y-8 animate-fadeIn">
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><GraduationCap size={16}/> Pendidikan</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                                {renderEditField("Tingkat", "tingkat_pendidikan", "text", ['SD', 'SMP', 'SMA/SMK', 'D3', 'S1', 'S2'])}
-                                {renderEditField("Nama Sekolah/Univ", "nama_sekolah")}
-                                {renderEditField("Jurusan", "jurusan")}
-                                {renderEditField("IPK", "ipk")}
-                                {renderEditField("Tahun Masuk", "tahun_masuk")}
-                                {renderEditField("Tahun Lulus", "tahun_lulus")}
-                            </div>
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><Briefcase size={16}/> Pengalaman Kerja</h3>
-                            {selectedApplicant.has_pengalaman_kerja || isEditing ? (
-                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {renderEditField("Nama Perusahaan", "nama_perusahaan")}
-                                        {renderEditField("Posisi/Jabatan", "posisi_jabatan")}
-                                        {renderEditField("Periode Kerja", "periode_kerja")}
+                            
+                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><Briefcase size={16}/> Pengalaman Kerja</h3>
+                                {selectedApplicant.has_pengalaman_kerja ? (
+                                    <div className="space-y-3">
+                                         {renderEditField("Perusahaan", "nama_perusahaan")}
+                                         <div className="grid grid-cols-2 gap-4">
+                                            {renderEditField("Jabatan", "posisi_jabatan")}
+                                            {renderEditField("Periode", "periode_kerja")}
+                                         </div>
+                                         {renderEditField("Tugas", "deskripsi_tugas")}
                                     </div>
-                                    <div className="mt-2">
-                                        {renderEditField("Deskripsi Tugas", "deskripsi_tugas")}
-                                    </div>
-                                    <div className="mt-2">
-                                        <label className="text-xs font-bold text-gray-400 uppercase">Pengalaman Leasing?</label>
-                                        <div className="text-sm font-medium">{selectedApplicant.has_pengalaman_leasing ? "YA" : "TIDAK"}</div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="text-gray-500 italic p-4 bg-gray-50 rounded">Fresh Graduate / Belum ada pengalaman relevan.</div>
-                            )}
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2"><CheckCircle size={16}/> Checklist Aset</h3>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                <span className={selectedApplicant.kendaraan_pribadi ? "text-green-600 font-medium" : "text-gray-400"}>Motor Pribadi</span>
-                                <span className={selectedApplicant.ktp_asli ? "text-green-600 font-medium" : "text-gray-400"}>KTP Asli</span>
-                                <span className={selectedApplicant.sim_c ? "text-green-600 font-medium" : "text-gray-400"}>SIM C</span>
-                                <span className={selectedApplicant.sim_a ? "text-green-600 font-medium" : "text-gray-400"}>SIM A</span>
-                                <span className={selectedApplicant.skck ? "text-green-600 font-medium" : "text-gray-400"}>SKCK</span>
-                                <span className={selectedApplicant.npwp ? "text-green-600 font-medium" : "text-gray-400"}>NPWP</span>
-                                <span className={selectedApplicant.riwayat_buruk_kredit ? "text-red-500 font-bold" : "text-gray-400"}>Bad Credit History</span>
+                                ) : (
+                                    <div className="text-center py-4 bg-gray-50 rounded text-gray-500 text-sm">Tidak ada pengalaman kerja (Fresh Graduate)</div>
+                                )}
                             </div>
-                        </div>
-                    </div>
-                )}
 
-                {activeDetailTab === 'documents' && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fadeIn">
-                        <div className="space-y-6">
-                            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                                <h4 className="font-bold text-slate-700 mb-4 flex items-center gap-2"><FileText size={18}/> Berkas Lamaran</h4>
-                                <div className="space-y-3">
-                                    <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
-                                        <div className="bg-red-50 text-red-500 p-2 rounded"><FileText size={20}/></div>
-                                        <div className="flex-1 text-sm font-medium">Curriculum Vitae</div>
-                                        <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
-                                    </a>
-                                    <a href={getFileUrl(selectedApplicant.ktp_path)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg hover:border-brand-500 hover:text-brand-600 transition-all group">
-                                        <div className="bg-blue-50 text-blue-500 p-2 rounded"><User size={20}/></div>
-                                        <div className="flex-1 text-sm font-medium">Kartu Tanda Penduduk</div>
-                                        <Download size={16} className="text-gray-400 group-hover:text-brand-500"/>
-                                    </a>
-                                </div>
-                            </div>
-                            <div>
-                                <h3 className="text-sm font-bold text-gray-800 border-b pb-2 mb-4">Motivasi / Alasan Melamar</h3>
-                                {renderEditField("", "alasan_melamar")}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 h-full">
-                                <h4 className="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><StickyNote size={16}/> Catatan Internal HRD</h4>
-                                <textarea 
-                                    className="w-full text-sm p-3 border rounded-lg focus:ring-amber-500 mb-2 h-40" 
-                                    placeholder="Tulis catatan interview atau status kandidat di sini..."
-                                    value={noteInput}
-                                    onChange={(e) => setNoteInput(e.target.value)}
-                                />
-                                <div className="flex justify-end">
-                                    <button onClick={handleSaveNote} disabled={savingNote} className="bg-amber-600 text-white text-xs px-3 py-1.5 rounded hover:bg-amber-700">
-                                    {savingNote ? 'Menyimpan...' : 'Simpan Catatan'}
-                                    </button>
+                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><CheckCircle size={16}/> Aset & Dokumen</h3>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                     {['kendaraan_pribadi', 'sim_c', 'sim_a', 'ktp_asli', 'skck', 'npwp', 'riwayat_buruk_kredit'].map(key => {
+                                         const isCredit = key === 'riwayat_buruk_kredit';
+                                         // @ts-ignore
+                                         const val = selectedApplicant[key];
+                                         return (
+                                            <div key={key} className={`flex items-center gap-2 p-2 rounded ${isCredit && val ? 'bg-red-50 text-red-700' : (!isCredit && val ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-400')}`}>
+                                                {val ? (isCredit ? <AlertCircle size={14}/> : <CheckCircle size={14}/>) : <X size={14}/>}
+                                                <span className="uppercase">{key.replace(/_/g, ' ')}</span>
+                                            </div>
+                                         );
+                                     })}
                                 </div>
                             </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    )}
 
-            {/* COPY MODAL OVERLAY */}
-            {isCopyModalOpen && (
-               <div className="absolute inset-0 bg-black/40 flex items-center justify-center z-[60]">
-                  <div className="bg-white p-6 rounded-lg w-96 shadow-xl animate-fadeIn">
-                     <h3 className="font-bold text-lg mb-4">Salin Data ke Excel</h3>
-                     <div className="space-y-3 mb-4">
-                        <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">PIC Rekrutmen</label>
-                           <select className="w-full border p-2 rounded" value={copyFormData.pic} onChange={e=>setCopyFormData({...copyFormData, pic: e.target.value})}>
-                              {PIC_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                           </select>
+                    {activeDetailTab === 'documents' && (
+                        <div className="space-y-6 animate-fadeIn">
+                            <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2"><FileText size={16}/> File Dokumen</h3>
+                                <div className="grid gap-3">
+                                     <a href={getFileUrl(selectedApplicant.cv_path)} target="_blank" rel="noreferrer" className="flex items-center gap-4 p-3 border rounded-lg hover:border-brand-500 hover:shadow-md transition-all">
+                                         <div className="w-10 h-10 bg-red-100 text-red-600 rounded flex items-center justify-center font-bold">PDF</div>
+                                         <div className="flex-1">
+                                             <div className="text-sm font-bold text-gray-800">Curriculum Vitae</div>
+                                             <div className="text-xs text-gray-500">Klik untuk melihat file</div>
+                                         </div>
+                                         <Download size={18} className="text-gray-400"/>
+                                     </a>
+                                     <a href={getFileUrl(selectedApplicant.ktp_path)} target="_blank" rel="noreferrer" className="flex items-center gap-4 p-3 border rounded-lg hover:border-brand-500 hover:shadow-md transition-all">
+                                         <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded flex items-center justify-center font-bold">IMG</div>
+                                         <div className="flex-1">
+                                             <div className="text-sm font-bold text-gray-800">Foto KTP</div>
+                                             <div className="text-xs text-gray-500">Klik untuk melihat file</div>
+                                         </div>
+                                         <Download size={18} className="text-gray-400"/>
+                                     </a>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Sentra</label>
-                           <input className="w-full border p-2 rounded" value={copyFormData.sentra} onChange={e=>setCopyFormData({...copyFormData, sentra: e.target.value})} placeholder="Contoh: JAKARTA"/>
+                    )}
+
+                    {activeDetailTab === 'journey' && (
+                        <div className="space-y-8 animate-fadeIn pb-8">
+                             
+                             {/* 1. CHAIN INTERVIEW SYSTEM */}
+                             <div className="space-y-6">
+                                {interviewChains.length === 0 ? (
+                                    <div className="text-center py-10 bg-white rounded-xl border border-dashed border-gray-300">
+                                        <p className="text-gray-500 text-sm mb-4">Belum ada riwayat proses interview.</p>
+                                        <button 
+                                            onClick={openNewChainModal}
+                                            className="bg-brand-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 mx-auto hover:bg-brand-700 shadow-lg"
+                                        >
+                                            <Plus size={16}/> Mulai Proses Baru
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div className="flex justify-end">
+                                            <button 
+                                                onClick={openNewChainModal}
+                                                className="bg-brand-50 text-brand-600 border border-brand-200 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-brand-100 transition-colors"
+                                            >
+                                                <Plus size={14}/> Buat Sesi Baru
+                                            </button>
+                                        </div>
+
+                                        {/* Render Chains */}
+                                        {interviewChains
+                                            .sort((a, b) => b[0].localeCompare(a[0])) // Sort by Chain ID (assuming timestamp) Descending
+                                            .map(([chainId, steps], index) => {
+                                                const lastStep = steps[steps.length - 1];
+                                                const isChainActive = lastStep.status === 'passed';
+                                                
+                                                return (
+                                                    <div key={chainId} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                                        <div className="bg-gray-50 px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                                                            <div className="text-xs font-bold text-gray-500 uppercase tracking-widest">
+                                                                Rangkaian Proses #{index + 1}
+                                                            </div>
+                                                            <div className="text-[10px] text-gray-400">
+                                                                ID: {chainId.substring(0, 8)}...
+                                                            </div>
+                                                        </div>
+                                                        
+                                                        <div className="p-6 relative">
+                                                            {/* Vertical Line Connector */}
+                                                            <div className="absolute left-[39px] top-6 bottom-6 w-0.5 bg-gray-200 z-0"></div>
+
+                                                            <div className="space-y-6 relative z-10">
+                                                                {steps.map((step, sIdx) => {
+                                                                    const isPassed = step.status === 'passed';
+                                                                    const isFailed = step.status === 'failed';
+                                                                    
+                                                                    // Icon Logic
+                                                                    let StepIcon = Users;
+                                                                    if (step.step_type === 'slik') StepIcon = CreditCard;
+                                                                    if (step.step_type === 'pemberkasan') StepIcon = FileCheck;
+                                                                    if (step.step_type === 'join') StepIcon = Flag;
+
+                                                                    return (
+                                                                        <div key={step.id} className="flex gap-4">
+                                                                            {/* Step Marker */}
+                                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 z-10 bg-white
+                                                                                ${isPassed ? 'border-green-500 text-green-600' : 
+                                                                                  isFailed ? 'border-red-500 text-red-600' : 
+                                                                                  'border-blue-500 text-blue-600'}
+                                                                            `}>
+                                                                                <StepIcon size={14} />
+                                                                            </div>
+
+                                                                            {/* Step Content Card */}
+                                                                            <div className={`flex-1 rounded-lg border p-3 text-sm relative group
+                                                                                ${isPassed ? 'bg-green-50 border-green-200' : 
+                                                                                  isFailed ? 'bg-red-50 border-red-200' : 
+                                                                                  'bg-white border-blue-200 shadow-sm'}
+                                                                            `}>
+                                                                                <div className="flex justify-between items-start mb-2">
+                                                                                    <div>
+                                                                                        <div className="text-xs font-bold text-gray-500 uppercase">{step.step_type}</div>
+                                                                                        <div className="font-bold text-gray-900">{new Date(step.interview_date).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
+                                                                                    </div>
+                                                                                    <div className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${isPassed ? 'bg-green-100 text-green-700 border-green-200' : isFailed ? 'bg-red-100 text-red-700 border-red-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                                                                        {step.status}
+                                                                                    </div>
+                                                                                </div>
+
+                                                                                {/* Dynamic Details */}
+                                                                                <div className="text-xs text-gray-600 space-y-1 mb-2">
+                                                                                    {step.step_type === 'interview' && (
+                                                                                        <>
+                                                                                            <div><span className="font-semibold">Posisi:</span> {step.meta_data?.position} - {step.meta_data?.client}</div>
+                                                                                            <div><span className="font-semibold">PIC:</span> {step.interviewer} ({step.meta_data?.interviewer_job || 'HR'})</div>
+                                                                                            <div><span className="font-semibold">Lokasi:</span> {step.location}</div>
+                                                                                        </>
+                                                                                    )}
+                                                                                    {step.step_type === 'slik' && (
+                                                                                        <>
+                                                                                            <div><span className="font-semibold">Pemeriksa:</span> {step.interviewer}</div>
+                                                                                            {step.meta_data?.kol_result && <div><span className="font-semibold">Hasil:</span> KOL {step.meta_data.kol_result}</div>}
+                                                                                        </>
+                                                                                    )}
+                                                                                    {step.step_type === 'pemberkasan' && (
+                                                                                        <div><span className="font-semibold">Admin:</span> {step.interviewer}</div>
+                                                                                    )}
+                                                                                    {step.step_type === 'join' && (
+                                                                                        <div><span className="font-semibold">Mulai Kontrak:</span> {step.meta_data?.contract_date}</div>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {step.result_note && (
+                                                                                    <div className="pt-2 border-t border-gray-200/50 text-xs italic opacity-80">
+                                                                                        "{step.result_note}"
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Action Buttons */}
+                                                                                {step.status === 'scheduled' && (
+                                                                                    <div className="mt-3 flex gap-2">
+                                                                                        <button onClick={() => { setSelectedInterviewId(step.id); setIsResultModalOpen(true); }} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-50 shadow-sm">
+                                                                                            Input Hasil
+                                                                                        </button>
+                                                                                        <button onClick={() => deleteInterview(step.id)} className="px-2 text-red-400 hover:bg-red-50 rounded border border-transparent hover:border-red-100"><Trash2 size={14}/></button>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })}
+
+                                                                {/* Add Next Step Button (Only if last step passed) */}
+                                                                {isChainActive && (
+                                                                    <div className="flex gap-4">
+                                                                        <div className="w-8 flex justify-center"><div className="w-0.5 h-8 bg-gray-200 border-l-2 border-dashed border-gray-300"></div></div>
+                                                                        <button 
+                                                                            onClick={() => openNextStepModal(chainId)}
+                                                                            className="flex-1 border-2 border-dashed border-gray-300 rounded-lg p-3 text-gray-400 text-xs font-bold flex items-center justify-center gap-2 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50 transition-all group"
+                                                                        >
+                                                                            <Plus size={16} className="group-hover:scale-110 transition-transform"/>
+                                                                            Lanjut Tahap Berikutnya
+                                                                        </button>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                    </>
+                                )}
+                             </div>
+
+                             {/* 2. ACTIVITY LOG */}
+                             <div className="bg-gray-50 p-6 rounded-xl border border-gray-200 shadow-sm mt-8">
+                                <h3 className="font-bold text-gray-800 text-sm mb-4 flex items-center gap-2">
+                                    <StickyNote size={16}/> Catatan Aktivitas Lainnya
+                                </h3>
+                                {/* ... (Note Input & List remains unchanged) ... */}
+                                <div className="mb-6 bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                    <textarea 
+                                        className="w-full text-sm p-2 bg-transparent outline-none min-h-[80px] placeholder:text-gray-400"
+                                        placeholder="Tulis catatan aktivitas baru..."
+                                        value={noteInput}
+                                        onChange={(e) => setNoteInput(e.target.value)}
+                                    />
+                                    <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-gray-100">
+                                        {editingNoteId && (
+                                            <button onClick={handleCancelEditNote} className="text-xs font-bold text-gray-500 px-3 py-1.5 hover:bg-gray-100 rounded">
+                                                Batal Edit
+                                            </button>
+                                        )}
+                                        <button 
+                                            onClick={handleSaveTimelineNote}
+                                            disabled={!noteInput.trim() || savingNote}
+                                            className="bg-brand-600 text-white text-xs font-bold px-4 py-1.5 rounded hover:bg-brand-700 disabled:opacity-50 flex items-center gap-2"
+                                        >
+                                            {savingNote ? <Loader2 size={12} className="animate-spin"/> : <Send size={12}/>}
+                                            {editingNoteId ? 'Update Catatan' : 'Posting Catatan'}
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    {timelineNotes.length === 0 ? (
+                                        <div className="text-center py-6 text-gray-400 text-xs italic border border-dashed border-gray-300 rounded-lg">
+                                            Belum ada catatan aktivitas tambahan.
+                                        </div>
+                                    ) : (
+                                        timelineNotes.map((note) => (
+                                            <div key={note.id} className="relative pl-6 animate-fadeIn group">
+                                                {/* Vertical Line for Log */}
+                                                <div className="absolute left-0 top-3 bottom-0 w-0.5 bg-gray-200 group-last:bottom-auto group-last:h-full"></div>
+                                                <div className="absolute left-[-4px] top-3 w-2.5 h-2.5 rounded-full bg-amber-400 border-2 border-white shadow-sm z-10"></div>
+
+                                                <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+                                                    <div className="flex justify-between items-start mb-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] font-bold text-brand-600 bg-brand-50 px-1.5 py-0.5 rounded">
+                                                                {note.author || 'HRD'}
+                                                            </span>
+                                                            <span className="text-[10px] text-gray-400">
+                                                                {new Date(note.createdAt).toLocaleString('id-ID')}
+                                                                {note.updatedAt && ' (diedit)'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                            <button 
+                                                                onClick={() => handleEditTimelineNote(note)}
+                                                                className="p-1 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded"
+                                                                title="Edit"
+                                                            >
+                                                                <Edit3 size={12}/>
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => handleDeleteTimelineNote(note.id)}
+                                                                className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                                                                title="Hapus"
+                                                            >
+                                                                <Trash2 size={12}/>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                                        {note.content}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                             </div>
                         </div>
-                        <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Cabang</label>
-                           <input className="w-full border p-2 rounded" value={copyFormData.cabang} onChange={e=>setCopyFormData({...copyFormData, cabang: e.target.value})} placeholder="Contoh: TEBET"/>
-                        </div>
-                        <div>
-                           <label className="block text-xs font-bold text-gray-500 mb-1">Posisi (Singkatan)</label>
-                           <input className="w-full border p-2 rounded" value={copyFormData.posisi} onChange={e=>setCopyFormData({...copyFormData, posisi: e.target.value})} />
-                        </div>
-                     </div>
-                     <div className="flex justify-end gap-2">
-                        <button onClick={() => setIsCopyModalOpen(false)} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 text-sm">Batal</button>
-                        <button onClick={executeCopy} className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 text-sm font-bold">Salin Sekarang</button>
-                     </div>
+                    )}
+               </div>
+
+               {/* STICKY ACTION FOOTER */}
+               <div className="flex-none p-4 bg-white border-t border-gray-200 flex items-center gap-3 z-30 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] absolute bottom-0 w-full">
+                   {/* ... (Unchanged) ... */}
+                   {isEditing ? (
+                       <>
+                           <button onClick={saveChanges} className="flex-1 bg-brand-600 text-white py-3 rounded-xl font-bold hover:bg-brand-700 shadow-lg shadow-brand-200 transition-all active:scale-95 flex justify-center items-center gap-2">
+                               <Save size={18}/> Simpan Perubahan
+                           </button>
+                           <button onClick={() => setIsEditing(false)} className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition-all">
+                               Batal
+                           </button>
+                       </>
+                   ) : (
+                       <>
+                           <button onClick={() => handleOpenWa(selectedApplicant)} className="flex-1 bg-green-500 text-white py-3 rounded-xl font-bold hover:bg-green-600 shadow-lg shadow-green-200 transition-all active:scale-95 flex justify-center items-center gap-2">
+                               <MessageCircle size={18}/> WhatsApp
+                           </button>
+                           
+                           <div className="flex gap-2">
+                                <button onClick={openCopyModal} className="p-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-100 border border-indigo-200 transition-all" title="Salin Excel">
+                                    <Copy size={20}/>
+                                </button>
+                                
+                                <div className="relative">
+                                     <button 
+                                        onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
+                                        className={`p-3 rounded-xl border transition-all ${isActionMenuOpen ? 'bg-slate-100 border-slate-300' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                                     >
+                                         <MoreVertical size={20}/>
+                                     </button>
+                                     
+                                     {isActionMenuOpen && (
+                                         <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-xl border border-gray-100 animate-fadeIn p-1 z-50">
+                                            {['process', 'interview', 'hired', 'rejected'].map(s => (
+                                            <button 
+                                                key={s} 
+                                                onClick={() => { updateStatus(selectedApplicant.id, s); setSelectedApplicant({...selectedApplicant, status: s}); setIsActionMenuOpen(false); }}
+                                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded capitalize"
+                                            >
+                                                Set: {s}
+                                            </button>
+                                            ))}
+                                            <div className="h-px bg-gray-100 my-1"></div>
+                                            <button onClick={() => { handleDelete(selectedApplicant.id); setIsActionMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 rounded">Hapus Permanen</button>
+                                         </div>
+                                     )}
+                                </div>
+                           </div>
+                       </>
+                   )}
+               </div>
+            </>
+          )}
+      </div>
+
+      {/* --- MODALS --- */}
+
+      {/* 1. Universal Step Modal (Flexible Form) */}
+      {isStepModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-scaleIn max-h-[90vh] overflow-y-auto">
+                  <div className="bg-slate-900 p-4 text-white flex justify-between items-center sticky top-0 z-10">
+                      <h3 className="font-bold flex items-center gap-2">
+                          <Calendar size={18}/> 
+                          {targetChainId ? 'Lanjut Tahap Berikutnya' : 'Mulai Proses Baru'}
+                      </h3>
+                      <button onClick={() => setIsStepModalOpen(false)}><X size={18}/></button>
+                  </div>
+                  
+                  <div className="p-6 space-y-4">
+                      {/* Step Type Selection (Only if continuing, or fixed to interview if new) */}
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Jenis Kegiatan</label>
+                          <select 
+                              className="w-full border p-2 rounded" 
+                              value={stepType} 
+                              onChange={e => setStepType(e.target.value as any)}
+                              disabled={!targetChainId} // New chain always starts with interview? Or flexible? Let's keep flexible but default interview
+                          >
+                              <option value="interview">Interview</option>
+                              {targetChainId && <option value="slik">Cek SLIK (BI Checking)</option>}
+                              {targetChainId && <option value="pemberkasan">Pemberkasan</option>}
+                              {targetChainId && <option value="join">Join / Sign Contract</option>}
+                          </select>
+                      </div>
+
+                      {/* --- FORM FIELDS BASED ON TYPE --- */}
+                      
+                      {stepType === 'interview' && (
+                          <>
+                              <div className="grid grid-cols-2 gap-4">
+                                  <div>
+                                      <label className="text-xs font-bold text-gray-500 mb-1 block">Tanggal</label>
+                                      <input type="date" className="w-full border p-2 rounded" value={stepForm.date} onChange={e => setStepForm({...stepForm, date: e.target.value})} />
+                                  </div>
+                                  <div>
+                                      <label className="text-xs font-bold text-gray-500 mb-1 block">Jam (WIB)</label>
+                                      <input type="time" className="w-full border p-2 rounded" value={stepForm.time} onChange={e => setStepForm({...stepForm, time: e.target.value})} />
+                                  </div>
+                              </div>
+                              
+                              {/* Cascading Dropdowns */}
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Klien & Posisi</label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                      <select 
+                                          className="border p-2 rounded text-xs w-full" 
+                                          value={stepForm.client} 
+                                          onChange={e => setStepForm({...stepForm, client: e.target.value, position: '', placement: ''})}
+                                      >
+                                          <option value="">- Klien -</option>
+                                          {clients.filter(c => c.is_active).map(c => (
+                                              <option key={c.id} value={c.id}>{c.name}</option>
+                                          ))}
+                                      </select>
+                                      
+                                      <select 
+                                          className="border p-2 rounded text-xs w-full disabled:bg-gray-100" 
+                                          value={stepForm.position} 
+                                          onChange={e => setStepForm({...stepForm, position: e.target.value, placement: ''})}
+                                          disabled={!stepForm.client}
+                                      >
+                                          <option value="">- Posisi -</option>
+                                          {positions
+                                              .filter(p => p.is_active && p.client_id.toString() === stepForm.client)
+                                              .map(p => (
+                                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                              ))
+                                          }
+                                      </select>
+                                  </div>
+                              </div>
+                              
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Penempatan & Lokasi Interview</label>
+                                  <select 
+                                      className="w-full border p-2 rounded mb-2 disabled:bg-gray-100" 
+                                      value={stepForm.placement} 
+                                      onChange={e => setStepForm({...stepForm, placement: e.target.value})}
+                                      disabled={!stepForm.position}
+                                  >
+                                      <option value="">- Pilih Penempatan -</option>
+                                      {placements
+                                          .filter(p => p.is_active && p.position_id.toString() === stepForm.position)
+                                          .map(p => (
+                                              <option key={p.id} value={p.id}>{p.label}</option>
+                                          ))
+                                      }
+                                  </select>
+                                  
+                                  <input className="w-full border p-2 rounded" placeholder="Lokasi Interview (Alamat Manual)..." value={stepForm.location} onChange={e => setStepForm({...stepForm, location: e.target.value})} />
+                              </div>
+                              
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Interviewer (PIC)</label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                      <input className="border p-2 rounded" placeholder="Nama..." value={stepForm.pic} onChange={e => setStepForm({...stepForm, pic: e.target.value})} />
+                                      <input className="border p-2 rounded" placeholder="Jabatan..." value={stepForm.interviewer_job} onChange={e => setStepForm({...stepForm, interviewer_job: e.target.value})} />
+                                  </div>
+                              </div>
+                          </>
+                      )}
+
+                      {stepType === 'slik' && (
+                          <>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Tanggal Pemeriksaan</label>
+                                  <input type="date" className="w-full border p-2 rounded" value={stepForm.date} onChange={e => setStepForm({...stepForm, date: e.target.value})} />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Pemeriksa (PIC)</label>
+                                  <input className="w-full border p-2 rounded" placeholder="Nama Pemeriksa..." value={stepForm.pic} onChange={e => setStepForm({...stepForm, pic: e.target.value})} />
+                              </div>
+                          </>
+                      )}
+
+                      {stepType === 'pemberkasan' && (
+                          <>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Tanggal Penyerahan</label>
+                                  <input type="date" className="w-full border p-2 rounded" value={stepForm.date} onChange={e => setStepForm({...stepForm, date: e.target.value})} />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Penerima Dokumen (PIC)</label>
+                                  <input className="w-full border p-2 rounded" placeholder="Nama Admin..." value={stepForm.pic} onChange={e => setStepForm({...stepForm, pic: e.target.value})} />
+                              </div>
+                          </>
+                      )}
+
+                      {stepType === 'join' && (
+                          <>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Tanggal Mulai Kontrak</label>
+                                  <input type="date" className="w-full border p-2 rounded" value={stepForm.contract_date} onChange={e => setStepForm({...stepForm, contract_date: e.target.value})} />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-bold text-gray-500 mb-1 block">Tanggal Sign Contract</label>
+                                  <input type="date" className="w-full border p-2 rounded" value={stepForm.date} onChange={e => setStepForm({...stepForm, date: e.target.value})} />
+                              </div>
+                          </>
+                      )}
+
+                      <button onClick={handleSaveStep} className="w-full bg-brand-600 text-white py-3 rounded-lg font-bold hover:bg-brand-700 mt-2">
+                          Simpan Jadwal
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* 2. Result Modal */}
+      {isResultModalOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+              <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-hidden animate-scaleIn">
+                  <div className="bg-slate-900 p-4 text-white flex justify-between items-center">
+                      <h3 className="font-bold flex items-center gap-2"><CheckCircle size={18}/> Update Hasil</h3>
+                      <button onClick={() => setIsResultModalOpen(false)}><X size={18}/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Keputusan</label>
+                          <select 
+                              className="w-full border p-2 rounded" 
+                              value={resultForm.status} 
+                              onChange={e => setResultForm({...resultForm, status: e.target.value})}
+                          >
+                              <option value="passed">✅ Lolos (Passed)</option>
+                              <option value="failed">❌ Gagal (Failed)</option>
+                              <option value="cancelled">⚠️ Dibatalkan</option>
+                          </select>
+                      </div>
+
+                      {/* Special field for SLIK result in result modal? Or assume stored in note? Let's add specific */}
+                      {interviews.find(i => i.id === selectedInterviewId)?.step_type === 'slik' && (
+                          <div>
+                              <label className="text-xs font-bold text-gray-500 mb-1 block">Hasil KOL</label>
+                              <select 
+                                  className="w-full border p-2 rounded" 
+                                  value={resultForm.kol_result} 
+                                  onChange={e => setResultForm({...resultForm, kol_result: e.target.value})}
+                              >
+                                  <option value="">- Pilih -</option>
+                                  <option value="1">KOL 1 (Lancar)</option>
+                                  <option value="2">KOL 2 (Dalam Perhatian)</option>
+                                  <option value="3">KOL 3 (Kurang Lancar)</option>
+                                  <option value="4">KOL 4 (Diragukan)</option>
+                                  <option value="5">KOL 5 (Macet)</option>
+                              </select>
+                          </div>
+                      )}
+
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 mb-1 block">Catatan / Alasan</label>
+                          <textarea 
+                              className="w-full border p-2 rounded min-h-[100px]" 
+                              placeholder="Berikan alasan atau catatan..."
+                              value={resultForm.note} 
+                              onChange={e => setResultForm({...resultForm, note: e.target.value})} 
+                          />
+                      </div>
+                      <button onClick={handleUpdateResult} className="w-full bg-brand-600 text-white py-3 rounded-lg font-bold hover:bg-brand-700 mt-2">
+                          Update Hasil
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Copy Modal Dialog */}
+      {isCopyModalOpen && (
+         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm animate-scaleIn">
+               <h3 className="font-bold text-lg mb-4">Salin Data ke Excel</h3>
+               <div className="space-y-3 mb-4">
+                  <div>
+                     <label className="text-xs font-bold text-gray-500">PIC</label>
+                     <select className="w-full border p-2 rounded" value={copyFormData.pic} onChange={e => setCopyFormData({...copyFormData, pic: e.target.value})}>
+                        {PIC_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                     </select>
+                  </div>
+                  <div>
+                     <label className="text-xs font-bold text-gray-500">Sentra</label>
+                     <input className="w-full border p-2 rounded" placeholder="Sentra..." value={copyFormData.sentra} onChange={e => setCopyFormData({...copyFormData, sentra: e.target.value})} />
+                  </div>
+                  <div>
+                     <label className="text-xs font-bold text-gray-500">Cabang</label>
+                     <input className="w-full border p-2 rounded" placeholder="Cabang..." value={copyFormData.cabang} onChange={e => setCopyFormData({...copyFormData, cabang: e.target.value})} />
                   </div>
                </div>
-            )}
-          </div>
-        </div>
+               <div className="flex gap-2">
+                  <button onClick={() => setIsCopyModalOpen(false)} className="flex-1 bg-gray-100 py-2 rounded font-bold text-gray-600">Batal</button>
+                  <button onClick={executeCopy} className="flex-1 bg-indigo-600 py-2 rounded font-bold text-white">Salin</button>
+               </div>
+            </div>
+         </div>
       )}
+
     </div>
   );
 };

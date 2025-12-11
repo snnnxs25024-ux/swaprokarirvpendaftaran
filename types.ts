@@ -1,9 +1,9 @@
 
 export interface FormData {
   // Job Info
-  client: string; // New Field
-  posisiDilamar: string;
-  penempatan: string;
+  client: string; // This holds ID now
+  posisiDilamar: string; // This holds ID now
+  penempatan: string; // This holds ID now
 
   // Personal Info
   namaLengkap: string;
@@ -114,8 +114,17 @@ export const INITIAL_DATA: FormData = {
 export interface ApplicantDB {
   id: number;
   created_at: string;
+  
+  // Relational Fields (New System)
+  client_id: number | null;
+  position_id: number | null;
+  placement_id: number | null;
+
+  // Legacy/Snapshot Fields (Backup Text)
+  mitra_klien: string; 
   posisi_dilamar: string;
   penempatan: string;
+  
   nama_lengkap: string;
   nik: string;
   no_hp: string;
@@ -159,6 +168,29 @@ export interface ApplicantDB {
   ktp_path: string;
   status: string; // 'new' | 'process' | 'interview' | 'rejected' | 'hired'
   internal_notes: string; // Catatan khusus HRD
+}
+
+// Interface untuk Sesi Interview & Proses (UPDATED)
+export interface InterviewSession {
+  id: number;
+  applicant_id: number;
+  created_at: string;
+  chain_id: string; // ID Unik untuk 1 Rangkaian (misal: timestamp start)
+  step_type: 'interview' | 'slik' | 'pemberkasan' | 'join'; // Tipe Langkah
+  interview_date: string; // Tanggal utama kegiatan
+  location: string;
+  interviewer: string; // PIC / Pemeriksa
+  status: 'scheduled' | 'passed' | 'failed' | 'cancelled';
+  result_note: string;
+  meta_data: {
+      client?: string;
+      position?: string;
+      placement?: string;
+      interviewer_job?: string; // Jabatan pewawancara
+      kol_result?: string; // KOL 1, 2, 5
+      contract_date?: string; // Untuk Join
+      [key: string]: any;
+  };
 }
 
 // Interface untuk Master Data
