@@ -44,7 +44,8 @@ import {
   Calendar,
   CreditCard,
   FileCheck,
-  Flag
+  Flag,
+  RefreshCw
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
@@ -621,6 +622,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               setSelectedApplicant({...selectedApplicant, status: newStatus});
           }
 
+          // FIX: Explicitly fetch immediately to update UI (Realtime Fix)
           await fetchInterviews(selectedApplicant.id);
 
           setIsStepModalOpen(false);
@@ -631,7 +633,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
   const handleUpdateResult = async () => {
-      if(!selectedInterviewId) return;
+      if(!selectedInterviewId || !selectedApplicant) return;
       try {
           // Get current meta data to append KOL result if SLIK
           const currentStep = interviews.find(i => i.id === selectedInterviewId);
@@ -647,11 +649,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
               meta_data: newMeta
           }).eq('id', selectedInterviewId);
           
-          // If Failed/Rejected, update main applicant status too?
-          if (resultForm.status === 'failed' && selectedApplicant) {
-               // Optional: Update main status to rejected? Or keep it process?
-               // Let's keep flexibility, user manually rejects from main dropdown if needed.
-          }
+          // FIX: Explicitly fetch immediately to update UI (Realtime Fix)
+          await fetchInterviews(selectedApplicant.id);
 
           setIsResultModalOpen(false);
           setResultForm({ status: 'passed', note: '', kol_result: '' });
@@ -659,8 +658,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   };
 
   const deleteInterview = async (id: number) => {
-      if(!window.confirm("Hapus jadwal ini?")) return;
+      if(!selectedApplicant || !window.confirm("Hapus jadwal ini?")) return;
       await supabase.from('interview_sessions').delete().eq('id', id);
+      // FIX: Realtime UI Update
+      await fetchInterviews(selectedApplicant.id);
   };
 
   // Helper to group interviews by chain
@@ -1761,6 +1762,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                             .map(([chainId, steps], index) => {
                                                 const lastStep = steps[steps.length - 1];
                                                 const isChainActive = lastStep.status === 'passed';
+                                                const isChainFailed = lastStep.status === 'failed' || lastStep.status === 'cancelled';
                                                 
                                                 return (
                                                     <div key={chainId} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -1781,6 +1783,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                                 {steps.map((step) => {
                                                                     const isPassed = step.status === 'passed';
                                                                     const isFailed = step.status === 'failed';
+                                                                    const isCancelled = step.status === 'cancelled';
                                                                     
                                                                     // Icon Logic
                                                                     let StepIcon = Users;
@@ -1794,6 +1797,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                                             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 z-10 bg-white
                                                                                 ${isPassed ? 'border-green-500 text-green-600' : 
                                                                                   isFailed ? 'border-red-500 text-red-600' : 
+                                                                                  isCancelled ? 'border-gray-400 text-gray-400' :
                                                                                   'border-blue-500 text-blue-600'}
                                                                             `}>
                                                                                 <StepIcon size={14} />
@@ -1803,6 +1807,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                                             <div className={`flex-1 rounded-lg border p-3 text-sm relative group
                                                                                 ${isPassed ? 'bg-green-50 border-green-200' : 
                                                                                   isFailed ? 'bg-red-50 border-red-200' : 
+                                                                                  isCancelled ? 'bg-gray-50 border-gray-200' :
                                                                                   'bg-white border-blue-200 shadow-sm'}
                                                                             `}>
                                                                                 <div className="flex justify-between items-start mb-2">
@@ -1810,8 +1815,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                                                         <div className="text-xs font-bold text-gray-500 uppercase">{step.step_type}</div>
                                                                                         <div className="font-bold text-gray-900">{new Date(step.interview_date).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}</div>
                                                                                     </div>
-                                                                                    <div className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${isPassed ? 'bg-green-100 text-green-700 border-green-200' : isFailed ? 'bg-red-100 text-red-700 border-red-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
-                                                                                        {step.status}
+                                                                                    <div className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${isPassed ? 'bg-green-100 text-green-700 border-green-200' : isFailed ? 'bg-red-100 text-red-700 border-red-200' : isCancelled ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
+                                                                                        {step.status === 'cancelled' ? 'DIBATALKAN' : step.status}
                                                                                     </div>
                                                                                 </div>
 
@@ -1844,30 +1849,32 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                                                                     </div>
                                                                                 )}
 
-                                                                                {/* Action Buttons */}
-                                                                                {step.status === 'scheduled' && (
-                                                                                    <div className="mt-3 flex gap-2">
-                                                                                        <button onClick={() => { setSelectedInterviewId(step.id); setIsResultModalOpen(true); }} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-50 shadow-sm">
-                                                                                            Input Hasil
+                                                                                {/* Action Buttons - ALWAYS VISIBLE NOW */}
+                                                                                <div className="mt-3 flex gap-2 border-t pt-2 border-gray-100/50">
+                                                                                        <button onClick={() => { setSelectedInterviewId(step.id); setIsResultModalOpen(true); }} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-50 shadow-sm flex items-center justify-center gap-1">
+                                                                                            {step.status === 'scheduled' ? <><CheckCircle size={12}/> Input Hasil</> : <><Edit3 size={12}/> Edit Hasil</>}
                                                                                         </button>
-                                                                                        <button onClick={() => deleteInterview(step.id)} className="px-2 text-red-400 hover:bg-red-50 rounded border border-transparent hover:border-red-100"><Trash2 size={14}/></button>
-                                                                                    </div>
-                                                                                )}
+                                                                                        <button onClick={() => deleteInterview(step.id)} className="px-2 text-red-400 hover:bg-red-50 rounded border border-transparent hover:border-red-100" title="Hapus"><Trash2 size={14}/></button>
+                                                                                </div>
                                                                             </div>
                                                                         </div>
                                                                     );
                                                                 })}
 
-                                                                {/* Add Next Step Button (Only if last step passed) */}
-                                                                {isChainActive && (
+                                                                {/* Logic: If Active OR Failed/Cancelled, allow "Next" or "Retry" */}
+                                                                {(isChainActive || isChainFailed) && (
                                                                     <div className="flex gap-4">
                                                                         <div className="w-8 flex justify-center"><div className="w-0.5 h-8 bg-gray-200 border-l-2 border-dashed border-gray-300"></div></div>
                                                                         <button 
                                                                             onClick={() => openNextStepModal(chainId)}
-                                                                            className="flex-1 border-2 border-dashed border-gray-300 rounded-lg p-3 text-gray-400 text-xs font-bold flex items-center justify-center gap-2 hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50 transition-all group"
+                                                                            className={`flex-1 border-2 border-dashed rounded-lg p-3 text-xs font-bold flex items-center justify-center gap-2 transition-all group
+                                                                                ${isChainFailed 
+                                                                                    ? 'border-amber-300 text-amber-600 bg-amber-50 hover:bg-amber-100' 
+                                                                                    : 'border-gray-300 text-gray-400 bg-transparent hover:border-brand-300 hover:text-brand-600 hover:bg-brand-50'}
+                                                                            `}
                                                                         >
-                                                                            <Plus size={16} className="group-hover:scale-110 transition-transform"/>
-                                                                            Lanjut Tahap Berikutnya
+                                                                            {isChainFailed ? <RefreshCw size={16} className="group-hover:rotate-180 transition-transform"/> : <Plus size={16} className="group-hover:scale-110 transition-transform"/>}
+                                                                            {isChainFailed ? 'Jadwalkan Ulang / Retry' : 'Lanjut Tahap Berikutnya'}
                                                                         </button>
                                                                     </div>
                                                                 )}
