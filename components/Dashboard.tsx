@@ -572,6 +572,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
       setIsStepModalOpen(true);
   };
 
+  const openEditResultModal = (step: InterviewSession) => {
+    setSelectedInterviewId(step.id);
+    setResultForm({
+        status: step.status,
+        note: step.result_note || '',
+        kol_result: step.meta_data?.kol_result || ''
+    });
+    setIsResultModalOpen(true);
+  };
+
   const handleSaveStep = async () => {
       if(!selectedApplicant) return;
       if(!stepForm.date && stepType !== 'join') return alert("Tanggal wajib diisi"); // Join date might be different logic
@@ -1851,7 +1861,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
                                                                                 {/* Action Buttons - ALWAYS VISIBLE NOW */}
                                                                                 <div className="mt-3 flex gap-2 border-t pt-2 border-gray-100/50">
-                                                                                        <button onClick={() => { setSelectedInterviewId(step.id); setIsResultModalOpen(true); }} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-50 shadow-sm flex items-center justify-center gap-1">
+                                                                                        <button onClick={() => openEditResultModal(step)} className="flex-1 bg-white border border-gray-300 text-gray-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-gray-50 shadow-sm flex items-center justify-center gap-1">
                                                                                             {step.status === 'scheduled' ? <><CheckCircle size={12}/> Input Hasil</> : <><Edit3 size={12}/> Edit Hasil</>}
                                                                                         </button>
                                                                                         <button onClick={() => deleteInterview(step.id)} className="px-2 text-red-400 hover:bg-red-50 rounded border border-transparent hover:border-red-100" title="Hapus"><Trash2 size={14}/></button>
