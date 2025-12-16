@@ -18,7 +18,8 @@ import {
   Check,
   Info,
   Rocket,
-  ArrowRight
+  ArrowRight,
+  RotateCcw
 } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 
@@ -26,14 +27,32 @@ interface JobFormProps {
   onBack: () => void;
 }
 
+const STORAGE_KEY = 'recruitpro_draft_v1';
+
 export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
-  const [formData, setFormData] = useState<FormData>(INITIAL_DATA);
+  // 1. LAZY INITIALIZATION (Load Draft from LocalStorage)
+  const [formData, setFormData] = useState<FormData>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Gabungkan dengan INITIAL_DATA untuk memastikan struktur lengkap
+        // File tidak bisa disimpan di LocalStorage, jadi diset null
+        return { ...INITIAL_DATA, ...parsed, cvFile: null, ktpFile: null };
+      }
+    } catch (e) {
+      console.error("Gagal memuat draft", e);
+    }
+    return INITIAL_DATA;
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
+  const [isDraftLoaded, setIsDraftLoaded] = useState(false);
 
   // Master Data
   const [allPositions, setAllPositions] = useState<JobPosition[]>([]);
@@ -48,6 +67,24 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const getClientName = (id: string) => clientOptions.find(c => c.value === id)?.label || '';
   const getPositionName = (id: string) => positionOptions.find(p => p.value === id)?.label || '';
   const getPlacementName = (id: string) => placementOptions.find(p => p.value === id)?.label || '';
+
+  // 2. AUTO-SAVE EFFECT
+  useEffect(() => {
+    // Gunakan timeout (debounce) agar tidak menyimpan setiap milidetik
+    const timer = setTimeout(() => {
+      // Pisahkan file object (tidak bisa di-stringify)
+      const { cvFile, ktpFile, ...dataToSave } = formData;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData]);
+
+  // Check if actually using a draft to show a small indicator
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved && !submitted) setIsDraftLoaded(true);
+  }, []);
 
   useEffect(() => {
     const fetchMasterData = async () => {
@@ -163,6 +200,15 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         delete newErrors[name];
         return newErrors;
       });
+    }
+  };
+
+  const resetForm = () => {
+    if(window.confirm("Hapus semua data yang sudah diisi?")) {
+        localStorage.removeItem(STORAGE_KEY);
+        setFormData(INITIAL_DATA);
+        setIsDraftLoaded(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -287,6 +333,10 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         });
 
       if (error) throw error;
+      
+      // 3. HAPUS DRAFT SETELAH SUKSES
+      localStorage.removeItem(STORAGE_KEY);
+      
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -393,16 +443,23 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
          />
          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/50 to-slate-900/20" />
          
-         <div className="absolute top-6 left-6 z-20">
+         <div className="absolute top-6 left-6 z-20 flex gap-3 w-full px-6 justify-between items-start">
             <button onClick={onBack} className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full backdrop-blur-md transition-all border border-white/10 shadow-lg">
-                <ArrowLeft size={18} /> <span className="font-medium text-sm">Kembali ke Beranda</span>
+                <ArrowLeft size={18} /> <span className="font-medium text-sm">Kembali</span>
             </button>
+            
+            {isDraftLoaded && (
+                <button onClick={resetForm} className="flex items-center gap-2 text-red-100 hover:text-white bg-red-900/30 hover:bg-red-900/50 px-3 py-1.5 rounded-full backdrop-blur-md transition-all border border-red-500/20 text-xs">
+                    <RotateCcw size={14} /> Reset Formulir
+                </button>
+            )}
          </div>
          
          <div className="absolute inset-0 flex flex-col items-center justify-center text-white px-4 pt-10">
            <span className="bg-brand-500/20 border border-brand-400/30 text-brand-200 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-4 backdrop-blur-sm">Karir Profesional</span>
            <h1 className="text-3xl md:text-5xl font-bold mb-3 tracking-tight text-center drop-shadow-lg">Formulir Pendaftaran</h1>
            <p className="text-lg text-slate-300 max-w-xl text-center font-light">Lengkapi data diri Anda untuk bergabung dengan tim terbaik PT Swapro International.</p>
+           {isDraftLoaded && <div className="mt-4 text-xs bg-amber-500/20 text-amber-200 px-3 py-1 rounded-full border border-amber-500/30 flex items-center gap-2 animate-pulse"><Info size={12}/> Melanjutkan pengisian data sebelumnya (Draft otomatis)</div>}
          </div>
       </div>
 
@@ -560,6 +617,11 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                     <FileUpload label="Upload CV Terbaru" accept=".pdf,.doc,.docx" currentFile={formData.cvFile} onChange={handleFileChange('cvFile')} required error={validationErrors.cvFile} />
                     <FileUpload label="Foto KTP (Jelas)" accept=".jpg,.jpeg,.png,.pdf" currentFile={formData.ktpFile} onChange={handleFileChange('ktpFile')} required error={validationErrors.ktpFile} />
                 </div>
+                {isDraftLoaded && (!formData.cvFile || !formData.ktpFile) && (
+                    <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2 rounded border border-amber-200 flex items-center gap-2">
+                        <Info size={14} /> Mohon upload ulang CV dan KTP Anda karena file tidak tersimpan dalam draft otomatis.
+                    </p>
+                )}
             </div>
             <div className="mt-6"><TextAreaField label="Motivasi Melamar" name="alasanMelamar" value={formData.alasanMelamar} onChange={handleChange} required rows={3} placeholder="Jelaskan secara singkat mengapa Anda tertarik dengan posisi ini..." /></div>
           </Section>
