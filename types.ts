@@ -43,6 +43,11 @@ export interface FormData {
   posisiJabatan: string;
   periodeKerja: string;
   deskripsiTugas: string;
+  
+  // Reference (Supervisor)
+  namaAtasan: string;
+  jabatanAtasan: string;
+  noHpAtasan: string;
 
   // Checklist
   kendaraanPribadi: boolean;
@@ -97,6 +102,9 @@ export const INITIAL_DATA: FormData = {
   posisiJabatan: '',
   periodeKerja: '',
   deskripsiTugas: '',
+  namaAtasan: '',
+  jabatanAtasan: '',
+  noHpAtasan: '',
   kendaraanPribadi: false,
   ktpAsli: false,
   simC: false,
@@ -156,6 +164,9 @@ export interface ApplicantDB {
   posisi_jabatan: string;
   periode_kerja: string;
   deskripsi_tugas: string;
+  nama_atasan: string;
+  jabatan_atasan: string;
+  no_hp_atasan: string;
   kendaraan_pribadi: boolean;
   ktp_asli: boolean;
   sim_c: boolean;
