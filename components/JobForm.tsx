@@ -54,22 +54,23 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
   const [isDraftLoaded, setIsDraftLoaded] = useState(false);
 
-  // Master Data States
+  // Master Data
   const [allPositions, setAllPositions] = useState<JobPosition[]>([]);
   const [allPlacements, setAllPlacements] = useState<JobPlacement[]>([]);
   
-  // Filtered Options for Dropdowns
+  // Filtered Options
   const [clientOptions, setClientOptions] = useState<{label: string, value: string}[]>([]);
   const [positionOptions, setPositionOptions] = useState<{label: string, value: string}[]>([]);
   const [placementOptions, setPlacementOptions] = useState<{label: string, value: string}[]>([]);
 
-  // Helpers to get text from IDs (Snapshot)
+  // Helpers to get text from IDs
   const getClientName = (id: string) => clientOptions.find(c => c.value === id)?.label || '';
   const getPositionName = (id: string) => positionOptions.find(p => p.value === id)?.label || '';
   const getPlacementName = (id: string) => placementOptions.find(p => p.value === id)?.label || '';
 
   // 2. AUTO-SAVE EFFECT
   useEffect(() => {
+    // Gunakan timeout (debounce) agar tidak menyimpan setiap milidetik
     const timer = setTimeout(() => {
       // Pisahkan file object (tidak bisa di-stringify)
       const { cvFile, ktpFile, ...dataToSave } = formData;
@@ -79,13 +80,12 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     return () => clearTimeout(timer);
   }, [formData]);
 
-  // Check if actually using a draft
+  // Check if actually using a draft to show a small indicator
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved && !submitted) setIsDraftLoaded(true);
   }, []);
 
-  // 3. FETCH MASTER DATA (Supabase)
   useEffect(() => {
     const fetchMasterData = async () => {
       // Fetch Clients
@@ -106,27 +106,32 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     fetchMasterData();
   }, []);
 
-  // 4. CASCADING LOGIC (Klien -> Posisi -> Penempatan)
-  
-  // Level 1: Client -> Filter Positions
+  // Cascading Logic Level 1: Client -> Filter Positions
   useEffect(() => {
     if (formData.client) {
         const clientId = parseInt(formData.client);
+        
         // Filter Positions by Client AND Active Status
         const filteredPos = allPositions.filter(p => p.client_id === clientId && p.is_active);
+        // VALUE IS NOW ID (Stringified)
         setPositionOptions(filteredPos.map(p => ({ label: p.name, value: p.id.toString() })));
+
     } else {
+        // Reset
         setPositionOptions([]);
     }
   }, [formData.client, allPositions]);
 
-  // Level 2: Position -> Filter Placements
+  // Cascading Logic Level 2: Position -> Filter Placements
   useEffect(() => {
      if (formData.posisiDilamar) {
         const positionId = parseInt(formData.posisiDilamar);
+        
         // Filter Placements by POSITION ID
         const filteredPlace = allPlacements.filter(p => p.position_id === positionId && p.is_active);
+        // VALUE IS NOW ID (Stringified)
         setPlacementOptions(filteredPlace.map(p => ({ label: p.label, value: p.id.toString() })));
+
      } else {
         setPlacementOptions([]);
      }
@@ -136,14 +141,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
 
-    // Validasi NIK Realtime (Hanya angka, max 16)
-    if (name === 'nik') {
-        if (!/^\d*$/.test(value)) return; // Hanya angka
-        if (value.length > 16) return;   // Max 16
-    }
-    
-    // Validasi No HP (Hanya angka)
-    if (name === 'noHp' && !/^\d*$/.test(value)) return;
+    if (name === 'nik' && value.length > 16) return; 
 
     setFormData(prev => {
       const newData = { ...prev, [name]: value };
@@ -164,7 +162,6 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       return newData;
     });
     
-    // Clear error on change
     if (validationErrors[name]) {
       setValidationErrors(prev => {
         const newErrors = { ...prev };
@@ -191,7 +188,8 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     setFormData(prev => ({ 
       ...prev, 
       hasPengalamanKerja: hasExperience,
-      hasPengalamanLeasing: false, 
+      hasPengalamanLeasing: false, // Default to false since UI is removed
+      // Reset contact info if switching to fresh grad
       namaAtasan: hasExperience ? prev.namaAtasan : '',
       jabatanAtasan: hasExperience ? prev.jabatanAtasan : '',
       noHpAtasan: hasExperience ? prev.noHpAtasan : '',
@@ -220,25 +218,16 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
   const validateForm = (): boolean => {
     const errors: Record<string, string> = {};
-    
-    // 1. Validasi Posisi & Penempatan
-    if (!formData.client) errors.client = "Mitra Klien wajib dipilih.";
+    if (!formData.client) errors.client = "Klien wajib dipilih.";
     if (!formData.posisiDilamar) errors.posisiDilamar = "Posisi wajib dipilih.";
-    if (!formData.penempatan) errors.penempatan = "Wilayah penempatan wajib dipilih.";
-    
-    // 2. Validasi Data Diri (Requested Fields)
-    if (!formData.namaLengkap.trim()) errors.namaLengkap = "Nama Lengkap wajib diisi.";
+    if (!formData.penempatan) errors.penempatan = "Penempatan wajib dipilih.";
     
     if (!formData.nik) errors.nik = "NIK wajib diisi.";
-    else if (formData.nik.length !== 16) errors.nik = `NIK harus tepat 16 digit (Saat ini: ${formData.nik.length}).`;
+    else if (formData.nik.length !== 16) errors.nik = `NIK harus 16 digit.`;
 
     if (!formData.noHp) errors.noHp = "No HP wajib diisi.";
-    else if (formData.noHp.length < 10) errors.noHp = "Nomor HP minimal 10 digit.";
+    else if (formData.noHp.length < 10) errors.noHp = "Min 10 digit.";
 
-    if (!formData.tempatLahir.trim()) errors.tempatLahir = "Tempat lahir wajib diisi.";
-    if (!formData.tanggalLahir) errors.tanggalLahir = "Tanggal lahir wajib diisi.";
-
-    // Other Validations
     if (formData.hasPengalamanKerja) {
         if (!formData.namaAtasan) errors.namaAtasan = "Nama atasan wajib diisi.";
         if (!formData.jabatanAtasan) errors.jabatanAtasan = "Jabatan atasan wajib diisi.";
@@ -251,6 +240,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
     setValidationErrors(errors);
     if (Object.keys(errors).length > 0) {
+      // Find the first error field and scroll to it if possible, or just top
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return false;
     }
@@ -290,7 +280,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
       if (!cvPath || !ktpPath) throw new Error("Gagal upload dokumen.");
 
-      // SNAPSHOT DATA (Backup Text for Search)
+      // SNAPSHOT DATA (Backup Text)
       const clientName = getClientName(formData.client);
       const posName = getPositionName(formData.posisiDilamar);
       const placeName = getPlacementName(formData.penempatan);
@@ -298,24 +288,21 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       const { error } = await supabase
         .from('applicants')
         .insert({
-          // RELATIONAL IDS (Critical for Synchronization)
+          // RELATIONAL IDS (For Dynamic Updates)
           client_id: parseInt(formData.client) || null,
           position_id: parseInt(formData.posisiDilamar) || null,
           placement_id: parseInt(formData.penempatan) || null,
 
-          // SNAPSHOT TEXTS (Backup)
+          // SNAPSHOT TEXTS (For Legacy/Backup)
           mitra_klien: clientName, 
           posisi_dilamar: posName,
           penempatan: placeName, 
 
-          // PERSONAL DATA (Requested Fields)
           nama_lengkap: formData.namaLengkap,
           nik: formData.nik,
           no_hp: formData.noHp,
           tempat_lahir: formData.tempatLahir,
           tanggal_lahir: formData.tanggalLahir,
-          
-          // ADDITIONAL DATA
           umur: typeof formData.umur === 'number' ? formData.umur : parseInt(formData.umur as string) || 0,
           jenis_kelamin: formData.jenisKelamin,
           status_perkawinan: formData.statusPerkawinan,
@@ -342,9 +329,12 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
           posisi_jabatan: formData.posisiJabatan,
           periode_kerja: formData.periodeKerja,
           deskripsi_tugas: formData.deskripsiTugas,
+          
+          // NEW FIELDS
           nama_atasan: formData.namaAtasan,
           jabatan_atasan: formData.jabatanAtasan,
           no_hp_atasan: formData.noHpAtasan,
+
           kendaraan_pribadi: formData.kendaraanPribadi,
           ktp_asli: formData.ktpAsli,
           sim_c: formData.simC,
@@ -360,7 +350,9 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
       if (error) throw error;
       
+      // 3. HAPUS DRAFT SETELAH SUKSES
       localStorage.removeItem(STORAGE_KEY);
+      
       setSubmitted(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -373,9 +365,11 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
   };
 
   if (submitted) {
+    // Logic for WA Link based on ID selection
     let recruiterNumber = "628123456789";
     let regionName = "";
     
+    // Find placement based on selected ID
     const selectedPlaceObj = allPlacements.find(p => p.id.toString() === formData.penempatan);
     if (selectedPlaceObj) {
         recruiterNumber = selectedPlaceObj.recruiter_phone;
@@ -383,15 +377,24 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
     }
 
     const posName = getPositionName(formData.posisiDilamar);
+
     const waMessage = `Halo Rekruter, saya ${formData.namaLengkap} telah mengisi formulir lamaran untuk posisi ${posName} di ${regionName}. Mohon arahan selanjutnya.`;
     const waLink = `https://api.whatsapp.com/send?phone=${recruiterNumber}&text=${encodeURIComponent(waMessage)}`;
 
     return (
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Decor */}
+        <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+            <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-brand-200/30 rounded-full blur-3xl"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-200/30 rounded-full blur-3xl"></div>
+        </div>
+
         <div className="bg-white max-w-lg w-full rounded-3xl shadow-2xl overflow-hidden relative z-10 animate-scaleIn">
+          {/* Header Celebration */}
           <div className="bg-slate-900 p-10 text-center relative overflow-hidden">
+             <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
              <div className="relative z-10">
-                <div className="w-24 h-24 bg-gradient-to-tr from-brand-400 to-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl border-4 border-slate-800">
+                <div className="w-24 h-24 bg-gradient-to-tr from-brand-400 to-brand-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl shadow-brand-900/50 border-4 border-slate-800">
                     <Rocket size={48} className="text-white animate-bounce-slow" />
                 </div>
                 <h2 className="text-3xl font-bold text-white mb-2">Lamaran Terkirim! 🚀</h2>
@@ -401,27 +404,40 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
           <div className="p-8">
              <p className="text-slate-600 text-center mb-8 leading-relaxed">
-                Data Anda sudah masuk ke sistem kami.
-                <br/>Langkah terakhir: Konfirmasi ke Rekruter.
+                Profil Anda luar biasa! Data Anda sudah masuk ke sistem kami.
+                <br/>Satu langkah lagi untuk memulai karir impianmu.
              </p>
 
+             {/* Golden Ticket Section */}
              <div className="bg-amber-50 border-2 border-dashed border-amber-300 rounded-2xl p-6 relative">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-3 text-xs font-bold text-amber-500 uppercase tracking-widest border border-amber-200 rounded-full">
+                    Langkah Wajib
+                </div>
+                
                 <div className="text-center">
                     <h4 className="font-bold text-slate-800 mb-2 flex items-center justify-center gap-2">
                         <MessageCircle className="text-green-600" /> Konfirmasi ke HRD
                     </h4>
                     <p className="text-sm text-slate-600 mb-4">
-                        Segera hubungi <strong>Rekruter {regionName}</strong>
+                        Segera hubungi <strong>Rekruter {regionName}</strong> untuk validasi data Anda.
                     </p>
-                    <a href={waLink} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-lg">
-                        <span>Chat HRD Sekarang</span>
-                        <ArrowRight size={20}/>
+                    
+                    <a 
+                        href={waLink} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-green-500 to-green-600 text-white font-bold py-4 rounded-xl hover:from-green-600 hover:to-green-700 transition-all shadow-lg hover:shadow-green-200 hover:-translate-y-1 group"
+                    >
+                        <span>Lanjut Chat HRD Sekarang</span>
+                        <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform"/>
                     </a>
                 </div>
              </div>
 
              <div className="mt-8 text-center">
-                <button onClick={onBack} className="text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors">Kembali ke Halaman Utama</button>
+                <button onClick={onBack} className="text-slate-400 hover:text-slate-600 text-sm font-medium transition-colors">
+                    Kembali ke Halaman Utama
+                </button>
              </div>
           </div>
         </div>
@@ -435,13 +451,19 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
       
       {/* HEADER SECTION */}
       <div className="h-72 bg-slate-900 relative overflow-hidden group">
-         <img src="/images/form-header.jpg" onError={(e)=>e.currentTarget.src="https://i.imgur.com/M3N0POE.jpeg"} alt="Office" className="w-full h-full object-cover opacity-40 transition-transform duration-1000 group-hover:scale-105"/>
+         <img 
+            src="/images/form-header.jpg" 
+            onError={(e)=>e.currentTarget.src="https://i.imgur.com/M3N0POE.jpeg"} 
+            alt="Office Background" 
+            className="w-full h-full object-cover opacity-40 transition-transform duration-1000 group-hover:scale-105"
+         />
          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/50 to-slate-900/20" />
          
          <div className="absolute top-6 left-6 z-20 flex gap-3 w-full px-6 justify-between items-start">
             <button onClick={onBack} className="flex items-center gap-2 text-white/90 hover:text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-full backdrop-blur-md transition-all border border-white/10 shadow-lg">
                 <ArrowLeft size={18} /> <span className="font-medium text-sm">Kembali</span>
             </button>
+            
             {isDraftLoaded && (
                 <button onClick={resetForm} className="flex items-center gap-2 text-red-100 hover:text-white bg-red-900/30 hover:bg-red-900/50 px-3 py-1.5 rounded-full backdrop-blur-md transition-all border border-red-500/20 text-xs">
                     <RotateCcw size={14} /> Reset Formulir
@@ -453,6 +475,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
            <span className="bg-brand-500/20 border border-brand-400/30 text-brand-200 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-4 backdrop-blur-sm">Karir Profesional</span>
            <h1 className="text-3xl md:text-5xl font-bold mb-3 tracking-tight text-center drop-shadow-lg">Formulir Pendaftaran</h1>
            <p className="text-lg text-slate-300 max-w-xl text-center font-light">Lengkapi data diri Anda untuk bergabung dengan tim terbaik PT Swapro International.</p>
+           {isDraftLoaded && <div className="mt-4 text-xs bg-amber-500/20 text-amber-200 px-3 py-1 rounded-full border border-amber-500/30 flex items-center gap-2 animate-pulse"><Info size={12}/> Melanjutkan pengisian data sebelumnya (Draft otomatis)</div>}
          </div>
       </div>
 
@@ -468,11 +491,10 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
         )}
         
         <form onSubmit={handleSubmit}>
-          
-          {/* SECTION 1: POSISI DILAMAR & PENEMPATAN (Sistem Bertingkat) */}
-          <Section title="Informasi Lowongan" icon={<Briefcase size={20} />} description="Pilih Klien terlebih dahulu untuk melihat posisi yang tersedia.">
+          {/* Section 1: Lowongan (Cascading 3 Level) */}
+          <Section title="Informasi Lowongan" icon={<Briefcase size={20} />} description="Pilih Klien > Posisi > Penempatan secara berurutan.">
             <div className="space-y-6">
-              {/* 1. Klien (Parent) */}
+              {/* 1. Client Select */}
               <SelectField 
                 label="Pilih Mitra Klien" 
                 name="client" 
@@ -483,106 +505,48 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
                 options={clientOptions}
               />
               
-              {/* 2. Posisi (Child of Client) */}
+              {/* 2. Position (Depends on Client) */}
               <SelectField 
                     label="Posisi Dilamar" 
                     name="posisiDilamar" 
                     value={formData.posisiDilamar} 
                     onChange={handleChange} 
                     required
-                    disabled={!formData.client}
+                    disabled={!formData.client} // Disable if no client
                     error={validationErrors.posisiDilamar}
                     options={positionOptions}
                 />
 
-              {/* 3. Penempatan (Child of Position) */}
+              {/* 3. Placement (Depends on Position) */}
                <SelectField 
                     label="Penempatan & Wilayah" 
                     name="penempatan" 
                     value={formData.penempatan} 
                     onChange={handleChange} 
                     required 
-                    disabled={!formData.posisiDilamar}
+                    disabled={!formData.posisiDilamar} // Disable if no position
                     error={validationErrors.penempatan}
                     options={placementOptions}
                 />
             </div>
           </Section>
 
-          {/* SECTION 2: DATA DIRI UTAMA (Nama, NIK, HP, Lahir) */}
-          <Section title="Data Pribadi Utama" icon={<User size={20} />}>
-            <div className="space-y-6">
-              {/* Nama Lengkap */}
-              <InputField 
-                label="Nama Lengkap (Sesuai KTP)" 
-                name="namaLengkap" 
-                value={formData.namaLengkap} 
-                onChange={handleChange} 
-                required 
-                error={validationErrors.namaLengkap}
-                placeholder="Contoh: Budi Santoso"
-              />
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* NIK (National ID) */}
-                  <InputField 
-                    label="NIK (Nomor KTP)" 
-                    name="nik" 
-                    value={formData.nik} 
-                    onChange={handleChange} 
-                    required 
-                    type="text" 
-                    inputMode="numeric"
-                    maxLength={16}
-                    placeholder="16 Digit Angka" 
-                    error={validationErrors.nik} 
-                  />
-
-                  {/* No HP */}
-                  <InputField 
-                    label="Nomor HP / WhatsApp" 
-                    name="noHp" 
-                    value={formData.noHp} 
-                    onChange={handleChange} 
-                    required 
-                    type="tel" 
-                    inputMode="numeric"
-                    placeholder="08..." 
-                    error={validationErrors.noHp} 
-                  />
-              </div>
-
-              {/* Tempat & Tanggal Lahir (Grouped) */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                  <InputField 
-                    label="Tempat Lahir" 
-                    name="tempatLahir" 
-                    value={formData.tempatLahir} 
-                    onChange={handleChange} 
-                    required 
-                    placeholder="Nama Kota/Kabupaten"
-                    error={validationErrors.tempatLahir}
-                  />
-                  <InputField 
-                    label="Tanggal Lahir" 
-                    name="tanggalLahir" 
-                    value={formData.tanggalLahir} 
-                    onChange={handleChange} 
-                    required 
-                    type="date" 
-                    error={validationErrors.tanggalLahir}
-                  />
-              </div>
-
-              {/* Additional Personal Data */}
-              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+          {/* Section 2: Data Diri */}
+          <Section title="Data Pribadi" icon={<User size={20} />}>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <InputField label="Nama Lengkap" name="namaLengkap" value={formData.namaLengkap} onChange={handleChange} required />
+              <InputField label="NIK (KTP)" name="nik" value={formData.nik} onChange={handleChange} required type="number" placeholder="16 Digit Angka" error={validationErrors.nik} />
+              <InputField label="Tempat Lahir" name="tempatLahir" value={formData.tempatLahir} onChange={handleChange} required />
+              <InputField label="Tanggal Lahir" name="tanggalLahir" value={formData.tanggalLahir} onChange={handleChange} required type="date" />
+              <div className="grid grid-cols-2 gap-4">
                  <InputField label="Umur" name="umur" value={formData.umur} onChange={handleChange} required type="number" />
                  <SelectField label="Jenis Kelamin" name="jenisKelamin" value={formData.jenisKelamin} onChange={handleChange} required options={[{ label: 'Laki-laki', value: 'Laki-laki' }, { label: 'Perempuan', value: 'Perempuan' }]} />
               </div>
               <SelectField label="Status Perkawinan" name="statusPerkawinan" value={formData.statusPerkawinan} onChange={handleChange} required options={[{ label: 'Belum Menikah', value: 'Belum Menikah' }, { label: 'Menikah', value: 'Menikah' }, { label: 'Cerai', value: 'Cerai' }]} />
               <SelectField label="Agama" name="agama" value={formData.agama} onChange={handleChange} required options={[{ label: 'Islam', value: 'Islam' }, { label: 'Kristen', value: 'Kristen' }, { label: 'Katolik', value: 'Katolik' }, { label: 'Hindu', value: 'Hindu' }, { label: 'Buddha', value: 'Buddha' }, { label: 'Lainnya', value: 'Lainnya' }]} />
-              <InputField label="Nama Ibu Kandung" name="namaIbu" value={formData.namaIbu} onChange={handleChange} required />
+              <InputField label="Nomor HP / WA" name="noHp" value={formData.noHp} onChange={handleChange} required type="tel" error={validationErrors.noHp} placeholder="08..." />
               <InputField label="Nama Ayah Kandung" name="namaAyah" value={formData.namaAyah} onChange={handleChange} required />
+              <InputField label="Nama Ibu Kandung" name="namaIbu" value={formData.namaIbu} onChange={handleChange} required />
             </div>
           </Section>
 
@@ -689,6 +653,7 @@ export const JobForm: React.FC<JobFormProps> = ({ onBack }) => {
 
           {/* TRUST CARD - PRIVACY POLICY & SUBMIT */}
           <div className="bg-gradient-to-br from-brand-50 via-white to-brand-50 border border-brand-100 rounded-2xl p-6 md:p-8 mb-8 relative overflow-hidden shadow-sm">
+             {/* Decorative Background Element */}
              <div className="absolute top-0 right-0 w-32 h-32 bg-brand-100 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 opacity-50 pointer-events-none"></div>
              
              <div className="flex gap-5 relative z-10 flex-col md:flex-row">
