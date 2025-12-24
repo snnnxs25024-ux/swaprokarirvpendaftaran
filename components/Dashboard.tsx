@@ -47,7 +47,9 @@ import {
   Flag,
   RefreshCw,
   LayoutGrid,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Database,
+  PlayCircle
 } from 'lucide-react';
 
 const PIC_OPTIONS = ['SUNAN', 'ADMIN', 'REKRUTER'];
@@ -205,13 +207,14 @@ interface DashboardProps {
   onLogout: () => void;
 }
 
-type TabType = 'dashboard' | 'talent_pool' | 'process' | 'rejected' | 'hired' | 'master_data' | 'monitoring';
+type TabType = 'dashboard' | 'talent_pool' | 'process' | 'interview' | 'rejected' | 'hired' | 'master_data' | 'monitoring';
 type DetailTab = 'profile' | 'qualification' | 'documents' | 'journey';
 
 export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // DATA STATES
   const [applicants, setApplicants] = useState<ApplicantDB[]>([]);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false); // State for auto-healing process
   
   // DASHBOARD METRICS STATE
   const [dashboardMetrics, setDashboardMetrics] = useState({
@@ -311,7 +314,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [clients, setClients] = useState<JobClient[]>([]);
   const [positions, setPositions] = useState<JobPosition[]>([]);
   const [placements, setPlacements] = useState<JobPlacement[]>([]);
-  const [masterTab, setMasterTab] = useState<'clients' | 'positions' | 'placements'>('clients');
+  const [masterTab, setMasterTab] = useState<'clients' | 'positions' | 'placements' | 'maintenance'>('clients');
 
   const [newClient, setNewClient] = useState('');
   const [newPosition, setNewPosition] = useState({ name: '', client_id: '' });
@@ -320,7 +323,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   const [newPlacement, setNewPlacement] = useState({ label: '', recruiter_phone: '' }); 
 
   // Stats Counters
-  const [stats, setStats] = useState({ total: 0, new: 0, process: 0, hired: 0, rejected: 0 });
+  const [stats, setStats] = useState({ total: 0, new: 0, process: 0, interview: 0, hired: 0, rejected: 0 });
 
   // --- FETCHING LOGIC ---
   const fetchDashboardData = useCallback(async () => {
@@ -385,7 +388,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
       // Apply Tab Filters
       if (activeTab === 'talent_pool') query = query.or('status.eq.new,status.is.null');
-      else if (activeTab === 'process') query = query.in('status', ['process', 'interview']);
+      else if (activeTab === 'process') query = query.eq('status', 'process');
+      else if (activeTab === 'interview') query = query.eq('status', 'interview');
       else if (activeTab === 'rejected') query = query.eq('status', 'rejected');
       else if (activeTab === 'hired') query = query.eq('status', 'hired');
       else if (activeTab === 'monitoring') {
@@ -397,10 +401,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
       // Apply Search & Dropdown Filters
       if (searchTerm) {
-        query = query.or(`nama_lengkap.ilike.%${searchTerm}%,penempatan.ilike.%${searchTerm}%,nik.ilike.%${searchTerm}%`);
+        query = query.or(`nama_lengkap.ilike.%${searchTerm}%,mitra_klien.ilike.%${searchTerm}%,penempatan.ilike.%${searchTerm}%,nik.ilike.%${searchTerm}%`);
       }
       if (filterClient) {
-        query = query.ilike('penempatan', `%${filterClient}%`);
+        // NEW LOGIC: Filter by client_id for accuracy
+        query = query.eq('client_id', filterClient);
       }
       if (filterEducation) {
         query = query.eq('tingkat_pendidikan', filterEducation);
@@ -432,17 +437,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
     const getCount = async (statusFilter: string) => {
         let q = supabase.from('applicants').select('id', { count: 'exact', head: true });
         if (statusFilter === 'new') q = q.or('status.eq.new,status.is.null');
-        else if (statusFilter === 'process') q = q.in('status', ['process', 'interview']);
         else if (statusFilter === 'all') { /* no filter */ }
         else q = q.eq('status', statusFilter);
         const { count } = await q;
         return count || 0;
     };
 
-    const [total, newCount, process, hired, rejected] = await Promise.all([
-        getCount('all'), getCount('new'), getCount('process'), getCount('hired'), getCount('rejected')
+    const [total, newCount, process, interview, hired, rejected] = await Promise.all([
+        getCount('all'), getCount('new'), getCount('process'), getCount('interview'), getCount('hired'), getCount('rejected')
     ]);
-    setStats({ total, new: newCount, process, hired, rejected });
+    setStats({ total, new: newCount, process, interview, hired, rejected });
   };
   
   const fetchMonitorCounts = async () => {
@@ -470,6 +474,81 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
         .order('created_at', { ascending: true }); // Order by creation to show chain properly
       if (data) setInterviews(data as InterviewSession[]);
   };
+
+  // --- AUTO HEALING / DATA SYNC ---
+  const handleDataAutoHealing = async () => {
+     if(!window.confirm("Proses ini akan memindai seluruh data pelamar dan memperbaiki ID (Klien/Posisi/Penempatan) berdasarkan kesamaan nama.\n\nLanjutkan?")) return;
+     
+     setSyncing(true);
+     try {
+        // 1. Fetch ALL applicants (lightweight select)
+        const { data: allApps } = await supabase.from('applicants').select('id, mitra_klien, posisi_dilamar, penempatan, client_id, position_id, placement_id');
+        
+        if (!allApps) return;
+
+        let fixedCount = 0;
+        
+        // 2. Iterate and Fix
+        for (const app of allApps) {
+            let updates: any = {};
+            let needsUpdate = false;
+
+            // Step A: Fix Client ID
+            const clientMatch = clients.find(c => c.name.trim().toLowerCase() === (app.mitra_klien || '').trim().toLowerCase());
+            let activeClientId = app.client_id;
+            
+            if (clientMatch && app.client_id !== clientMatch.id) {
+                updates.client_id = clientMatch.id;
+                activeClientId = clientMatch.id;
+                needsUpdate = true;
+            }
+
+            // Step B: Fix Position ID (Using Active Client ID)
+            let activePosId = app.position_id;
+            if (activeClientId) {
+                const posMatch = positions.find(p => 
+                    p.client_id === activeClientId && 
+                    p.name.trim().toLowerCase() === (app.posisi_dilamar || '').trim().toLowerCase()
+                );
+                
+                if (posMatch && app.position_id !== posMatch.id) {
+                    updates.position_id = posMatch.id;
+                    activePosId = posMatch.id;
+                    needsUpdate = true;
+                }
+            }
+
+            // Step C: Fix Placement ID (Using Active Position ID)
+            if (activePosId) {
+                const placeMatch = placements.find(p =>
+                    p.position_id === activePosId &&
+                    p.label.trim().toLowerCase() === (app.penempatan || '').trim().toLowerCase()
+                );
+
+                if (placeMatch && app.placement_id !== placeMatch.id) {
+                    updates.placement_id = placeMatch.id;
+                    needsUpdate = true;
+                }
+            }
+
+            // Execute Update if needed
+            if (needsUpdate) {
+                await supabase.from('applicants').update(updates).eq('id', app.id);
+                fixedCount++;
+            }
+        }
+
+        alert(`Selesai! ${fixedCount} data pelamar berhasil diperbaiki dan disinkronkan.`);
+        await fetchStats(); // Refresh stats
+        await fetchMonitorCounts(); // Refresh monitor counts
+
+     } catch (err: any) {
+        alert("Terjadi kesalahan saat sinkronisasi: " + err.message);
+     } finally {
+        setSyncing(false);
+     }
+  };
+
 
   // --- EFFECT HOOKS ---
   
@@ -559,6 +638,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   useEffect(() => {
     const channel = supabase.channel('realtime-dashboard')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'applicants' }, () => {
+         // Hanya refetch jika sedang tidak dalam proses update internal untuk mencegah UI jumpy
          if (activeTab === 'dashboard') { fetchStats(); fetchDashboardData(); }
          else { fetchApplicants(); fetchStats(); }
       })
@@ -577,7 +657,42 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
   // --- ACTIONS ---
 
   const updateStatus = async (id: number, newStatus: string) => {
-    await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
+    // 1. Optimistic Update (Update UI Immediately)
+    const isStillValidInCurrentTab = (status: string) => {
+        if (activeTab === 'talent_pool') return ['new', null, ''].includes(status);
+        if (activeTab === 'process') return status === 'process';
+        if (activeTab === 'interview') return status === 'interview';
+        if (activeTab === 'rejected') return status === 'rejected';
+        if (activeTab === 'hired') return status === 'hired';
+        return true; // monitoring or other tabs usually show all
+    };
+
+    const isMatch = isStillValidInCurrentTab(newStatus);
+
+    if (!isMatch && activeTab !== 'monitoring' && activeTab !== 'dashboard') {
+        // Hapus dari list pelamar jika tidak lagi cocok dengan tab saat ini
+        setApplicants(prev => prev.filter(a => a.id !== id));
+        setTotalCount(prev => Math.max(0, prev - 1));
+    } else {
+        // Update status di dalam list tanpa menghapus
+        setApplicants(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+    }
+
+    // Jika pelamar yang diedit sedang dibuka di drawer, update juga statusnya di sana
+    if (selectedApplicant?.id === id) {
+        setSelectedApplicant(prev => prev ? { ...prev, status: newStatus } : null);
+    }
+
+    // 2. Perform Backend Update
+    try {
+        await supabase.from('applicants').update({ status: newStatus }).eq('id', id);
+        // Refresh stats counter di sidebar
+        fetchStats();
+    } catch (err: any) {
+        console.error("Gagal update status:", err.message);
+        // Rollback? Optional, fetchApplicants() will eventually correct it
+        fetchApplicants();
+    }
   };
 
   // --- MONITORING NAVIGATION HANDLERS ---
@@ -686,7 +801,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           
           if (selectedApplicant.status !== newStatus) {
               await updateStatus(selectedApplicant.id, newStatus);
-              setSelectedApplicant({...selectedApplicant, status: newStatus});
           }
 
           // FIX: Explicitly fetch immediately to update UI (Realtime Fix)
@@ -812,20 +926,53 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
 
   const handleBulkStatusUpdate = async (newStatus: string) => {
     if (!window.confirm(`Update ${selectedIds.length} data?`)) return;
-    await supabase.from('applicants').update({ status: newStatus }).in('id', selectedIds);
-    setSelectedIds([]);
+    
+    // Optimistic Bulk
+    const validIds = selectedIds;
+    setSelectedIds([]); // Clear selection early
+
+    try {
+        await supabase.from('applicants').update({ status: newStatus }).in('id', validIds);
+        
+        // Refetch fully to ensure everything is correct
+        fetchApplicants();
+        fetchStats();
+    } catch (err: any) {
+        console.error("Gagal update massal:", err.message);
+        fetchApplicants();
+    }
   };
 
   const handleBulkDelete = async () => {
     if (!window.confirm(`HAPUS ${selectedIds.length} DATA?`)) return;
-    await supabase.from('applicants').delete().in('id', selectedIds);
-    setSelectedIds([]);
+    const idsToDelete = selectedIds;
+    setSelectedIds([]); // Clear selection
+
+    try {
+        await supabase.from('applicants').delete().in('id', idsToDelete);
+        fetchApplicants();
+        fetchStats();
+    } catch (err: any) {
+        console.error("Gagal hapus massal:", err.message);
+        fetchApplicants();
+    }
   };
 
   const handleDelete = async (id: number) => {
     if (!window.confirm("Hapus permanen?")) return;
-    await supabase.from('applicants').delete().eq('id', id);
+    
+    // Optimistic Delete
+    setApplicants(prev => prev.filter(a => a.id !== id));
+    setTotalCount(prev => Math.max(0, prev - 1));
     if (selectedApplicant?.id === id) setSelectedApplicant(null);
+
+    try {
+        await supabase.from('applicants').delete().eq('id', id);
+        fetchStats();
+    } catch (err: any) {
+        console.error("Gagal hapus:", err.message);
+        fetchApplicants();
+    }
   };
 
   const startEditing = () => { 
@@ -1087,7 +1234,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
           </button>
 
           <div className="pt-4 pb-2 px-3 text-xs font-semibold text-slate-500 uppercase">Pipeline</div>
-          {['talent_pool', 'process', 'hired', 'rejected'].map((tab) => (
+          {['talent_pool', 'process', 'interview', 'hired', 'rejected'].map((tab) => (
              <button key={tab} onClick={() => setActiveTab(tab as any)} className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all ${activeTab === tab ? 'bg-slate-800 text-white shadow-md border-l-4 border-brand-500' : 'hover:bg-slate-800'}`}>
                 <div className="flex items-center gap-3 capitalize">{tab.replace('_', ' ')}</div>
                 {/* @ts-ignore */}
@@ -1210,9 +1357,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
            /* --- MASTER DATA (SAME AS BEFORE) --- */
            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden animate-fadeIn">
               <div className="border-b border-gray-200 flex bg-gray-50">
-                 {['clients', 'positions', 'placements'].map(tab => (
-                    <button key={tab} onClick={() => setMasterTab(tab as any)} className={`px-6 py-3 text-sm font-bold uppercase ${masterTab === tab ? 'bg-white border-t-2 border-brand-600 text-brand-600' : 'text-gray-500'}`}>
-                        {tab}
+                 {['clients', 'positions', 'placements', 'maintenance'].map(tab => (
+                    <button key={tab} onClick={() => setMasterTab(tab as any)} className={`px-6 py-3 text-sm font-bold uppercase ${masterTab === tab ? 'bg-white border-t-2 border-brand-600 text-brand-600' : 'text-gray-500 hover:text-gray-700'}`}>
+                        {tab === 'maintenance' ? <span className="flex items-center gap-2"><Database size={16}/> {tab}</span> : tab}
                     </button>
                  ))}
               </div>
@@ -1351,6 +1498,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                             </tbody>
                         </table>
                     </div>
+                 )}
+
+                 {masterTab === 'maintenance' && (
+                     <div className="max-w-2xl mx-auto text-center py-10">
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 shadow-sm">
+                            <div className="w-20 h-20 bg-brand-100 text-brand-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <RefreshCw size={40} className={syncing ? "animate-spin" : ""} />
+                            </div>
+                            <h3 className="text-xl font-bold text-slate-800 mb-3">Auto-Healing & Sinkronisasi Data</h3>
+                            <p className="text-slate-600 mb-8 leading-relaxed max-w-lg mx-auto">
+                                Fitur ini akan memindai seluruh data pelamar yang memiliki teks Klien/Posisi/Penempatan namun ID-nya kosong atau tidak sesuai. Sistem akan secara otomatis mencocokkan teks tersebut dengan Master Data dan memperbaiki struktur database.
+                            </p>
+                            
+                            <button 
+                                onClick={handleDataAutoHealing} 
+                                disabled={syncing}
+                                className="bg-brand-600 text-white px-8 py-4 rounded-xl font-bold shadow-lg shadow-brand-200 hover:bg-brand-700 hover:-translate-y-1 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 mx-auto"
+                            >
+                                {syncing ? (
+                                    <>
+                                        <Loader2 size={20} className="animate-spin" />
+                                        Sedang Memproses...
+                                    </>
+                                ) : (
+                                    <>
+                                        <PlayCircle size={20} />
+                                        Mulai Perbaikan Data
+                                    </>
+                                )}
+                            </button>
+                            <p className="text-xs text-slate-400 mt-4">Disarankan dijalankan secara berkala atau setelah import data massal.</p>
+                        </div>
+                     </div>
                  )}
               </div>
            </div>
@@ -1517,7 +1697,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                    {activeTab !== 'monitoring' && (
                        <select className="border p-2 rounded-lg text-sm" value={filterClient} onChange={e => setFilterClient(e.target.value)}>
                           <option value="">Semua Klien</option>
-                          {clients.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                          {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                        </select>
                    )}
 
@@ -1576,8 +1756,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                 rowClass = "bg-emerald-50/60 border-l-4 border-l-emerald-500 hover:bg-emerald-100/50";
                             } else if (app.status === 'rejected') {
                                 rowClass = "bg-rose-50/60 border-l-4 border-l-rose-500 hover:bg-rose-100/50";
-                            } else if (['process', 'interview'].includes(app.status)) {
+                            } else if (app.status === 'process') {
                                 rowClass = "bg-amber-50/60 border-l-4 border-l-amber-500 hover:bg-amber-100/50";
+                            } else if (app.status === 'interview') {
+                                rowClass = "bg-purple-50/60 border-l-4 border-l-purple-500 hover:bg-purple-100/50";
                             }
 
                             // Notes indicator (Check json or string)
@@ -1619,7 +1801,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                         className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer outline-none bg-white/50 backdrop-blur-sm shadow-sm
                                             ${app.status === 'hired' ? 'text-green-700 ring-1 ring-green-200' : 
                                             app.status === 'rejected' ? 'text-red-700 ring-1 ring-red-200' :
-                                            ['process', 'interview'].includes(app.status) ? 'text-amber-700 ring-1 ring-amber-200' :
+                                            app.status === 'process' ? 'text-amber-700 ring-1 ring-amber-200' :
+                                            app.status === 'interview' ? 'text-purple-700 ring-1 ring-purple-200' :
                                             'text-blue-600 ring-1 ring-blue-200'}
                                         `}
                                     >
@@ -2233,7 +2416,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onLogout }) => {
                                             {['process', 'interview', 'hired', 'rejected'].map(s => (
                                             <button 
                                                 key={s} 
-                                                onClick={() => { updateStatus(selectedApplicant.id, s); setSelectedApplicant({...selectedApplicant, status: s}); setIsActionMenuOpen(false); }}
+                                                onClick={() => { updateStatus(selectedApplicant.id, s); setIsActionMenuOpen(false); }}
                                                 className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 rounded capitalize"
                                             >
                                                 Set: {s}

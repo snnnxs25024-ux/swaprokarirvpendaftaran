@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 interface BaseProps {
@@ -69,7 +70,7 @@ interface CheckboxProps {
   checked: boolean;
   onChange: (checked: boolean) => void;
   subLabel?: string;
-  error?: string; // Add error prop support
+  error?: string;
 }
 
 export const CheckboxField: React.FC<CheckboxProps> = ({ label, checked, onChange, subLabel, error }) => (
@@ -108,10 +109,10 @@ interface FileUploadProps {
   currentFile: File | null;
   required?: boolean;
   error?: string;
-  maxSizeMB?: number; // New Prop for Max Size
+  maxSizeMB?: number;
 }
 
-export const FileUpload: React.FC<FileUploadProps> = ({ label, accept, onChange, currentFile, required, error, maxSizeMB = 2 }) => {
+export const FileUpload: React.FC<FileUploadProps> = ({ label, accept, onChange, currentFile, required, error, maxSizeMB = 10 }) => {
   const [internalError, setInternalError] = React.useState<string | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,10 +120,9 @@ export const FileUpload: React.FC<FileUploadProps> = ({ label, accept, onChange,
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       
-      // Validation: Check Size
       if (file.size > maxSizeMB * 1024 * 1024) {
         setInternalError(`Ukuran file terlalu besar. Maksimal ${maxSizeMB}MB.`);
-        onChange(null); // Reset
+        onChange(null);
         return;
       }
       
@@ -149,7 +149,7 @@ export const FileUpload: React.FC<FileUploadProps> = ({ label, accept, onChange,
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
             </svg>
             <p className="text-sm text-gray-500"><span className="font-semibold">Klik untuk upload</span></p>
-            <p className="text-xs text-gray-500 mt-1">PNG, JPG atau PDF (Max {maxSizeMB}MB)</p>
+            <p className="text-xs text-gray-500 mt-1">Format: {accept?.replace(/\./g, ' ').toUpperCase() || 'Semua'} (Max {maxSizeMB}MB)</p>
           </div>
           <input 
             type="file" 
